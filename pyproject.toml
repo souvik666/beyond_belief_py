@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "beyond-belief-py"
+version = "0.1.0"
+description = ""
+authors = ["souvik666 <peacedynasty0@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+meta-ai-api = "^1.2.5"
+dotenv = "^0.9.9"
+requests = "^2.31.0"
+pillow = "^10.0.0"
+python-crontab = "^3.0.0"
+schedule = "^1.2.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
