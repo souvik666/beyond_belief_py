@@ -9,7 +9,7 @@ from services.automation_service import NewsAutomationService, CronAutomationSer
 
 def main():
     parser = argparse.ArgumentParser(description='Facebook News Automation Service')
-    parser.add_argument('command', choices=['start', 'schedule', 'test', 'setup-cron', 'remove-cron', 'info', 'cache', 'reset-cache', 'stats'], 
+    parser.add_argument('command', choices=['start', 'schedule', 'test', 'setup-cron', 'remove-cron', 'info', 'cache', 'reset-cache', 'stats', 'docker'], 
                        help='Command to execute')
     parser.add_argument('--interval', type=int, help='Custom interval in minutes for start command')
     
@@ -61,6 +61,39 @@ def main():
         cron_service = CronAutomationService()
         cron_service.remove_cron_job()
     
+    elif args.command == 'docker':
+        # Docker mode - non-interactive automation with auto-setup
+        print("🐳 Docker Mode - Non-interactive automation")
+        print("🤖 Auto-configuring preferences...")
+        
+        automation = NewsAutomationService()
+        
+        # Auto-setup preferences without user input
+        automation.preferences = {
+            'topics': ['general', 'technology', 'business', 'politics'],
+            'countries': ['in', 'jp', 'pk', 'bd'],  # India, Japan, Pakistan, Bangladesh
+            'queries': [
+                'technology news',
+                'business updates', 
+                'political developments',
+                'congress party',
+                'bangladesh news',
+                'pakistan news',
+                'strange news',
+                'paranormal events'
+            ]
+        }
+        
+        print("✅ Auto-configured preferences:")
+        print(f"   Topics: {automation.preferences['topics']}")
+        print(f"   Countries: {automation.preferences['countries']}")
+        print(f"   Queries: {len(automation.preferences['queries'])} search terms")
+        
+        # Start automation with custom interval or default
+        interval = args.interval if args.interval else 10
+        print(f"🚀 Starting automation with {interval} minute interval...")
+        automation.start_automation(interval)
+    
     elif args.command == 'info':
         # Show page information
         automation = NewsAutomationService()
@@ -86,4 +119,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

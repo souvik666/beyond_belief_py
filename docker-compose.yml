@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  facebook-news-automation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: facebook-news-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override specific settings if needed
+      - POSTING_INTERVAL=${POSTING_INTERVAL:-10}
+      - TZ=${TZ:-UTC}
+    
+    volumes:
+      # Persist database and logs
+      - ./data/db:/app/db
+      - ./data/logs:/app/logs
+      - ./data/cache:/app/cache
+      
+      # Mount environment file
+      - ./.env:/app/.env:ro
+    
+    networks:
+      - facebook-automation-network
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Command to run automation in Docker mode (non-interactive)
+    command: ["python", "main.py", "docker", "--interval", "${POSTING_INTERVAL:-10}"]
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Database for advanced logging (if needed)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: facebook-news-db
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_DB=facebook_news
+  #     - POSTGRES_USER=automation
+  #     - POSTGRES_PASSWORD=${DB_PASSWORD:-automation123}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - facebook-automation-network
+  #   ports:
+  #     - "5432:5432"
+
+  # Optional: Redis for caching (if needed)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: facebook-news-redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - facebook-automation-network
+  #   ports:
+  #     - "6379:6379"
+
+  # Optional: Monitoring with Portainer
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: facebook-news-portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - facebook-automation-network
+    profiles:
+      - monitoring
+
+networks:
+  facebook-automation-network:
+    driver: bridge
+
+volumes:
+  # Data persistence
+  postgres_data:
+  redis_data:
+  portainer_data:

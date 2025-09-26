@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from .news_service import NewsFetcher
 from .content_generator import ContentGenerator
 from .facebook_service import FacebookService
+from .twitter_service import TwitterAPI
 from .logging_service import AutomationLogger
 
 load_dotenv()
@@ -24,6 +25,20 @@ class NewsAutomationService:
         self.content_generator = ContentGenerator()
         self.facebook_service = FacebookService()
         self.logger = AutomationLogger()
+        
+        # Initialize Twitter service (optional)
+        self.twitter_enabled = os.getenv('ENABLE_TWITTER', 'true').lower() == 'true'
+        
+        if self.twitter_enabled:
+            try:
+                self.twitter_service = TwitterAPI()
+                print("✅ Twitter service initialized")
+            except Exception as e:
+                print(f"⚠️ Twitter service not available: {e}")
+                self.twitter_service = None
+        else:
+            print("ℹ️ Twitter posting disabled via ENABLE_TWITTER=false")
+            self.twitter_service = None
         
         # User preferences (will be set during setup)
         self.preferences = None
@@ -177,41 +192,78 @@ class NewsAutomationService:
                 'countries_searched': article.get('countries_searched', '')
             })
             
-            # Generate content using Meta AI
-            print("🤖 Generating content with Meta AI...")
-            self.logger.log_step("AI_CONTENT_GENERATION_START", {
-                'article_title': article.get('title', '')[:100]
-            })
+            # Generate content based on enabled platforms
+            if self.twitter_enabled and self.twitter_service:
+                print("🤖 Generating dual platform content with Meta AI...")
+                self.logger.log_step("AI_CONTENT_GENERATION_START", {
+                    'article_title': article.get('title', '')[:100]
+                })
+                dual_content = self.content_generator.generate_dual_platform_content(article)
+            else:
+                print("🤖 Generating Facebook content with Meta AI...")
+                self.logger.log_step("AI_CONTENT_GENERATION_START", {
+                    'article_title': article.get('title', '')[:100]
+                })
+                facebook_content = self.content_generator.generate_content_from_news(article, "facebook")
+                dual_content = {'facebook': facebook_content, 'twitter': ''}
             
-            content = self.content_generator.generate_content_from_news(article)
-            
-            if not content:
+            if not dual_content or not dual_content.get('facebook'):
                 self.logger.log_content_generation(article, "", False)
                 print("❌ Failed to generate content")
                 return
             
-            self.logger.log_content_generation(article, content, True)
+            facebook_content = dual_content['facebook']
+            twitter_content = dual_content.get('twitter', '')
+            
+            self.logger.log_content_generation(article, facebook_content, True)
             
             # Get image URL from article
             image_url = article.get('image_url') or article.get('urlToImage')
             
+            # Post to Facebook
             self.logger.log_step("FACEBOOK_POST_START", {
-                'content_length': len(content),
+                'content_length': len(facebook_content),
                 'has_image': bool(image_url),
                 'image_url': image_url[:100] if image_url else None
             })
             
-            # Post to Facebook with news image or AI-generated image
             print("📤 Posting to Facebook...")
-            response = self.facebook_service.smart_post(
-                content, 
+            facebook_response = self.facebook_service.smart_post(
+                facebook_content, 
                 image_url, 
                 article.get('title', ''), 
                 article.get('description', '')
             )
             
-            # Log the successful post
-            self.logger.log_post(article, content, response, True)
+            # Post to Twitter if available (optional - skip if fails)
+            twitter_success = False
+            if self.twitter_service and twitter_content:
+                try:
+                    print("🐦 Attempting to post to Twitter...")
+                    self.logger.log_step("TWITTER_POST_START", {
+                        'content_length': len(twitter_content),
+                        'has_image': bool(image_url)
+                    })
+                    
+                    twitter_success = self.twitter_service.post_tweet(twitter_content, image_url)
+                    
+                    if twitter_success:
+                        print("✅ Successfully posted to Twitter!")
+                    else:
+                        print("⚠️ Twitter post failed - skipping and continuing with Facebook only")
+                        
+                except Exception as e:
+                    print(f"⚠️ Twitter posting error: {e} - skipping Twitter and continuing")
+                    twitter_success = False
+            elif not self.twitter_service:
+                print("ℹ️ Twitter service not available - posting to Facebook only")
+            else:
+                print("ℹ️ No Twitter content generated - posting to Facebook only")
+            
+            # Log the successful posts
+            self.logger.log_post(article, facebook_content, facebook_response, True)
+            
+            response = facebook_response  # Keep for compatibility
             
             # Mark article as posted in cache
             self.news_fetcher.mark_as_posted(article)

@@ -139,33 +139,82 @@ install_essential_deps() {
     echo "✅ Essential dependencies installation complete"
 }
 
+# Function to fix Python version issues
+fix_python_version() {
+    echo "🔧 Fixing Python version compatibility issues..."
+    
+    # Check current Python version
+    local python_version=$(python --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
+    echo "🐍 Current Python version: $python_version"
+    
+    # Handle Python 3.12+ compatibility issues
+    if [[ "$python_version" > "3.11" ]]; then
+        echo "⚠️ Python 3.12+ detected - applying compatibility fixes..."
+        
+        # Set environment variables for compatibility
+        export SETUPTOOLS_USE_DISTUTILS=stdlib
+        export PIP_BREAK_SYSTEM_PACKAGES=1
+        
+        # Install compatible versions
+        echo "📦 Installing Python 3.12+ compatible packages..."
+        python -m pip install --upgrade pip setuptools wheel --break-system-packages
+        
+        # Install specific compatible versions
+        python -m pip install "poetry>=1.6.0" --break-system-packages
+        python -m pip install "cryptography>=41.0.0" --break-system-packages
+        
+    else
+        echo "✅ Python version compatible, proceeding normally..."
+    fi
+}
+
 # Function to setup Python environment
 setup_python_environment() {
     echo "🐍 Setting up Python environment..."
     
-    # Upgrade pip
-    echo "📦 Upgrading pip..."
-    python -m pip install --upgrade pip
+    # Fix Python version issues first
+    fix_python_version
     
-    # Install essential Python packages
+    # Upgrade pip with compatibility flags
+    echo "📦 Upgrading pip..."
+    if python -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)"; then
+        python -m pip install --upgrade pip --break-system-packages
+    else
+        python -m pip install --upgrade pip
+    fi
+    
+    # Install essential Python packages with version compatibility
     echo "📦 Installing essential Python packages..."
     local python_packages=(
         "wheel"
-        "setuptools"
-        "poetry"
+        "setuptools>=68.0.0"
+        "poetry>=1.6.0"
         "requests"
         "pillow"
-        "cryptography"
+        "cryptography>=41.0.0"
         "cffi"
         "pycparser"
     )
     
     for package in "${python_packages[@]}"; do
         echo "📦 Installing Python package: $package"
-        if python -m pip install "$package"; then
-            echo "✅ $package installed successfully"
+        
+        # Use appropriate pip flags based on Python version
+        if python -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)"; then
+            if python -m pip install "$package" --break-system-packages; then
+                echo "✅ $package installed successfully"
+            else
+                echo "⚠️ Warning: Failed to install $package, trying alternative..."
+                # Try without version constraints
+                local base_package=$(echo "$package" | cut -d'>' -f1 | cut -d'=' -f1)
+                python -m pip install "$base_package" --break-system-packages || echo "⚠️ $base_package installation failed"
+            fi
         else
-            echo "⚠️ Warning: Failed to install $package, continuing..."
+            if python -m pip install "$package"; then
+                echo "✅ $package installed successfully"
+            else
+                echo "⚠️ Warning: Failed to install $package, continuing..."
+            fi
         fi
     done
     
@@ -312,15 +361,64 @@ download_project() {
 install_python_deps() {
     echo "📦 Installing Python dependencies..."
     
-    # Check if poetry is installed
+    # Check if poetry is installed and install with compatibility
     if ! command -v poetry &> /dev/null; then
         echo "📦 Installing Poetry..."
-        pip install poetry
+        if python -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)"; then
+            python -m pip install poetry --break-system-packages
+        else
+            python -m pip install poetry
+        fi
     fi
     
-    # Install project dependencies
-    echo "📦 Installing project dependencies..."
-    poetry install
+    # Configure Poetry for Python 3.12+ compatibility
+    echo "🔧 Configuring Poetry..."
+    poetry config virtualenvs.create false
+    poetry config installer.max-workers 1
+    
+    # Handle Python 3.12+ specific issues
+    if python -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)"; then
+        echo "🔧 Applying Python 3.12+ compatibility fixes for Poetry..."
+        export PIP_BREAK_SYSTEM_PACKAGES=1
+        export SETUPTOOLS_USE_DISTUTILS=stdlib
+        
+        # Install dependencies with compatibility flags
+        echo "📦 Installing project dependencies (Python 3.12+ mode)..."
+        poetry install --no-dev || {
+            echo "⚠️ Poetry install failed, trying alternative method..."
+            
+            # Fallback: Install dependencies manually
+            echo "📦 Installing dependencies manually..."
+            python -m pip install requests pillow python-dotenv schedule meta-ai-api --break-system-packages
+            
+            # Create a minimal pyproject.toml if needed
+            if [ ! -f "pyproject.toml" ]; then
+                echo "📝 Creating minimal pyproject.toml..."
+                cat > pyproject.toml << 'EOF'
+[tool.poetry]
+name = "facebook-news-automation"
+version = "1.0.0"
+description = "Facebook News Automation"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+requests = "^2.31.0"
+pillow = "^10.0.0"
+python-dotenv = "^1.0.0"
+schedule = "^1.2.0"
+meta-ai-api = "^0.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+EOF
+            fi
+        }
+    else
+        # Standard Poetry installation for older Python versions
+        echo "📦 Installing project dependencies..."
+        poetry install
+    fi
     
     echo "✅ Dependencies installed"
 }
@@ -379,8 +477,8 @@ run_automation() {
     echo "🛑 Press Ctrl+C to stop"
     echo ""
     
-    # Run the automation
-    poetry run python main.py start --interval $interval
+    # Run the automation in non-interactive mode
+    poetry run python main.py docker --interval $interval
 }
 
 # Function to run test post

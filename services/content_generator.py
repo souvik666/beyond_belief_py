@@ -98,19 +98,32 @@ Make it memorable and shareable!"""
             'education': ['#Education', '#Students', '#Learning', '#Schools']
         }
     
-    def generate_content_from_news(self, article: Dict[str, Any]) -> str:
-        """Generate unique content from a news article using Meta AI"""
+    def generate_content_from_news(self, article: Dict[str, Any], platform: str = "facebook") -> str:
+        """Generate unique content from a news article using Meta AI for specific platform"""
         try:
             title = article.get('title', '')
             description = article.get('description', '')
             category = article.get('category', ['general'])
             country = article.get('country', [''])
             
-            # Select a random template
-            template = random.choice(self.templates)
+            # Platform-specific templates
+            if platform.lower() == "twitter":
+                template = self._get_twitter_template()
+                char_limit = 280
+                platform_name = "Twitter"
+            else:
+                template = random.choice(self.templates)
+                char_limit = 800
+                platform_name = "Facebook"
             
             # Create the prompt
             prompt = template.format(title=title)
+            
+            # Add platform-specific instructions
+            if platform.lower() == "twitter":
+                prompt += f"\n\nIMPORTANT: This is for {platform_name}. Keep it under {char_limit} characters including hashtags. Be concise and punchy."
+            else:
+                prompt += f"\n\nIMPORTANT: This is for {platform_name}. Keep it under {char_limit} characters total."
             
             # Add context if description is available
             if description:
@@ -124,28 +137,82 @@ Make it memorable and shareable!"""
             elif 'congress' in title.lower() or 'congress' in description.lower():
                 prompt += "\n\nSPECIAL INSTRUCTION: This involves the Congress party in India. Please provide logical criticism of their policies, decisions, or actions. Point out flaws in their approach and suggest better alternatives."
             
-            # Generate content using Meta AI
-            print(f"🤖 Generating content for: {title[:50]}...")
+            # Generate content using Meta AI with delay
+            print(f"🤖 Generating {platform_name} content for: {title[:50]}...")
+            
+            # Add delay before LLM call to prevent rate limiting
+            import time
+            time.sleep(2)  # 2 second delay before each LLM call
+            
             response = self.ai.prompt(message=prompt)
             
             # Extract the generated text
             generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
             
-            # Add relevant hashtags
-            hashtags = self._get_relevant_hashtags(category, title.lower())
+            # Add relevant hashtags based on platform
+            hashtags = self._get_relevant_hashtags(category, title.lower(), platform)
             
             # Combine content with hashtags
             final_content = f"{generated_content}\n\n{' '.join(hashtags)}"
             
-            print(f"✅ Generated content: {final_content[:100]}...")
+            # Ensure character limit compliance
+            if len(final_content) > char_limit:
+                print(f"⚠️ Content too long ({len(final_content)} chars), truncating for {platform_name}...")
+                final_content = final_content[:char_limit-3] + "..."
+            
+            print(f"✅ Generated {platform_name} content ({len(final_content)} chars): {final_content[:100]}...")
             return final_content
             
         except Exception as e:
             print(f"❌ Error generating content: {e}")
             # Fallback to simple content
-            return self._create_fallback_content(article)
+            return self._create_fallback_content(article, platform)
+
+    def _get_twitter_template(self) -> str:
+        """Get Twitter-specific template"""
+        twitter_templates = [
+            "Create a punchy Twitter post about: {title}\n\nMAX 280 chars including hashtags. Format:\n🔥 Brief headline\n📰 Key point (1 sentence)\n🤔 Critical take\n#hashtags",
+            
+            "Write a Twitter-ready post for: {title}\n\nMAX 280 chars total. Structure:\n⚡ Eye-catching opener\n📝 Main point\n💭 Question or critique\n#hashtags",
+            
+            "Create a concise tweet about: {title}\n\nSTRICT 280 char limit. Include:\n- Relevant emoji\n- Brief summary\n- Critical angle\n- 2-3 hashtags",
+            
+            "Transform into a Twitter post: {title}\n\nUnder 280 chars. Format:\n🚨 Attention grabber\n📊 Key fact\n🔍 Critical insight\n#hashtags"
+        ]
+        return random.choice(twitter_templates)
+
+    def generate_dual_platform_content(self, article: Dict[str, Any]) -> Dict[str, str]:
+        """Generate content for both Facebook and Twitter"""
+        try:
+            print(f"🔄 Generating dual platform content...")
+            
+            # Generate Facebook content
+            facebook_content = self.generate_content_from_news(article, "facebook")
+            
+            # Wait longer between platform content generation for better quality
+            import time
+            print("⏳ Waiting 3 seconds before generating Twitter content...")
+            time.sleep(3)  # 3 second delay between platform content generation
+            
+            # Generate Twitter content
+            twitter_content = self.generate_content_from_news(article, "twitter")
+            
+            return {
+                'facebook': facebook_content,
+                'twitter': twitter_content
+            }
+            
+        except Exception as e:
+            print(f"❌ Error generating dual platform content: {e}")
+            # Fallback
+            fallback_fb = self._create_fallback_content(article, "facebook")
+            fallback_tw = self._create_fallback_content(article, "twitter")
+            return {
+                'facebook': fallback_fb,
+                'twitter': fallback_tw
+            }
     
-    def _get_relevant_hashtags(self, categories: List[str], title_text: str) -> List[str]:
+    def _get_relevant_hashtags(self, categories: List[str], title_text: str, platform: str = "facebook") -> List[str]:
         """Get relevant hashtags based on article category and content"""
         selected_hashtags = []
         
@@ -176,27 +243,42 @@ Make it memorable and shareable!"""
         unique_hashtags = list(dict.fromkeys(selected_hashtags))[:5]
         return unique_hashtags
     
-    def _create_fallback_content(self, article: Dict[str, Any]) -> str:
+    def _create_fallback_content(self, article: Dict[str, Any], platform: str = "facebook") -> str:
         """Create structured fallback content when AI generation fails"""
         title = article.get('title', 'Breaking News')
         description = article.get('description', '')
         
-        # Structured fallback templates with proper formatting
-        fallback_templates = [
-            f"📰 BREAKING NEWS\n\n{title}\n\n💭 What are your thoughts on this development?\n\nStay informed with the latest updates!",
+        # Platform-specific fallback content
+        if platform.lower() == "twitter":
+            # Twitter fallback (280 chars max)
+            twitter_templates = [
+                f"🚨 {title[:100]}...\n\n💭 Thoughts?\n\n#News #Breaking",
+                f"📰 {title[:120]}...\n\n#Update #Latest",
+                f"⚡ {title[:130]}...\n\n#News #Today"
+            ]
+            content = random.choice(twitter_templates)
             
-            f"🔥 LATEST UPDATE\n\n{title}\n\n📝 Key points:\n• Important news development\n• Stay tuned for more updates\n\n💬 Share your views in the comments!",
+            # Ensure Twitter character limit
+            if len(content) > 280:
+                content = content[:277] + "..."
+                
+        else:
+            # Facebook fallback
+            fallback_templates = [
+                f"📰 BREAKING NEWS\n\n{title}\n\n💭 What are your thoughts on this development?\n\nStay informed with the latest updates!",
+                
+                f"🔥 LATEST UPDATE\n\n{title}\n\n📝 Key points:\n• Important news development\n• Stay tuned for more updates\n\n💬 Share your views in the comments!",
+                
+                f"📢 NEWS ALERT\n\n{title}\n\n🌍 This story is developing...\n\n❓ What do you think about this?",
+                
+                f"⚡ JUST IN\n\n{title}\n\n📊 Quick Summary:\n→ Breaking news story\n→ More details to follow\n\n🗣️ Let us know your opinion!"
+            ]
             
-            f"📢 NEWS ALERT\n\n{title}\n\n🌍 This story is developing...\n\n❓ What do you think about this?",
+            content = random.choice(fallback_templates)
             
-            f"⚡ JUST IN\n\n{title}\n\n📊 Quick Summary:\n→ Breaking news story\n→ More details to follow\n\n🗣️ Let us know your opinion!"
-        ]
-        
-        content = random.choice(fallback_templates)
-        
-        # Add basic hashtags with proper spacing
-        basic_hashtags = ['#News', '#BreakingNews', '#Update', '#Latest']
-        content += f"\n\n{' '.join(random.sample(basic_hashtags, 3))}"
+            # Add basic hashtags with proper spacing
+            basic_hashtags = ['#News', '#BreakingNews', '#Update', '#Latest']
+            content += f"\n\n{' '.join(random.sample(basic_hashtags, 3))}"
         
         return content
     

@@ -22,7 +22,7 @@ COPY FACEBOOK_TOKEN_GUIDE.md ./
 
 # Install Python dependencies
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-dev
+    && poetry install --only=main --no-root
 
 # Create environment file template
 RUN echo "# Environment Variables Template" > .env.template \
@@ -39,8 +39,8 @@ RUN mkdir -p db/posts db/logs db/cache db/errors
 # Expose port (if needed for web interface)
 EXPOSE 8000
 
-# Default command
-CMD ["python", "main.py", "--help"]
+# Default command - Docker mode (non-interactive)
+CMD ["python", "main.py", "docker"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
