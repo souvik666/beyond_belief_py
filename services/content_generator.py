@@ -463,8 +463,9 @@ Make it shareable and intriguing!"""
             return []
 
     def _get_reddit_hashtags(self, subreddit: str, title_text: str) -> List[str]:
-        """Get relevant hashtags for Reddit content"""
+        """Get relevant hashtags for Reddit content - Enhanced with video-rich subreddits"""
         reddit_hashtags = {
+            # Original paranormal subs
             'paranormal': ['#Paranormal', '#Ghost', '#Supernatural'],
             'ghosts': ['#Ghost', '#Haunted', '#Paranormal'],
             'ufos': ['#UFO', '#Aliens', '#Extraterrestrial'],
@@ -474,7 +475,84 @@ Make it shareable and intriguing!"""
             'highstrangeness': ['#Strange', '#Unexplained', '#Mystery'],
             'glitch_in_the_matrix': ['#GlitchInTheMatrix', '#Reality', '#Strange'],
             'nosleep': ['#Horror', '#Scary', '#Creepy'],
-            'letsnotmeet': ['#TrueStory', '#Scary', '#RealLife']
+            'letsnotmeet': ['#TrueStory', '#Scary', '#RealLife'],
+            
+            # Video-rich paranormal subreddits
+            'paranormalvideos': ['#ParanormalVideo', '#CaughtOnCamera', '#Supernatural'],
+            'ghostvideos': ['#GhostVideo', '#Haunted', '#Paranormal'],
+            'ufovideos': ['#UFOVideo', '#Aliens', '#Sighting'],
+            'cryptidsightings': ['#CryptidSighting', '#Bigfoot', '#Mystery'],
+            'securitycameras': ['#SecurityCam', '#CaughtOnCamera', '#Surveillance'],
+            'caughtoncamera': ['#CaughtOnCamera', '#Video', '#Unexplained'],
+            'unexplainedphotos': ['#Unexplained', '#Mystery', '#Evidence'],
+            'trailcam': ['#TrailCam', '#Wildlife', '#Cryptids'],
+            'dashcam': ['#DashCam', '#Video', '#Strange'],
+            
+            # More active paranormal communities
+            'thetruthishere': ['#TrueStory', '#Paranormal', '#RealExperience'],
+            'humanoidencounters': ['#Humanoid', '#Encounter', '#Strange'],
+            'crawlersightings': ['#Crawler', '#Cryptids', '#Sighting'],
+            'dogman': ['#Dogman', '#Cryptids', '#Sighting'],
+            'bigfoot': ['#Bigfoot', '#Sasquatch', '#Cryptids'],
+            'skinwalkers': ['#Skinwalker', '#Supernatural', '#Native'],
+            'wendigo': ['#Wendigo', '#Cryptids', '#Horror'],
+            'missing411': ['#Missing411', '#Mystery', '#Unexplained'],
+            
+            # Horror and creepy video content
+            'creepyvideos': ['#CreepyVideo', '#Horror', '#Disturbing'],
+            'disturbingmovies': ['#Disturbing', '#Horror', '#Video'],
+            'unsolvedmysteries': ['#UnsolvedMystery', '#Mystery', '#Investigation'],
+            'rbi': ['#Investigation', '#Mystery', '#Analysis'],
+            'mystery': ['#Mystery', '#Unexplained', '#Investigation'],
+            
+            # Supernatural and occult
+            'occult': ['#Occult', '#Supernatural', '#Ritual'],
+            'witchcraft': ['#Witchcraft', '#Magic', '#Supernatural'],
+            'demons': ['#Demon', '#Supernatural', '#Evil'],
+            'possession': ['#Possession', '#Demon', '#Supernatural'],
+            'exorcism': ['#Exorcism', '#Demon', '#Supernatural'],
+            
+            # Strange phenomena
+            'timeslip': ['#TimeSlip', '#Time', '#Strange'],
+            'dimensionaljumping': ['#DimensionalJumping', '#Reality', '#Strange'],
+            'mandelaeffect': ['#MandelaEffect', '#Reality', '#Memory'],
+            'retconned': ['#Retconned', '#Reality', '#Change'],
+            'telepathy': ['#Telepathy', '#Psychic', '#Supernatural'],
+            'precognition': ['#Precognition', '#Psychic', '#Future'],
+            
+            # Video-focused general subs
+            'publicfreakout': ['#PublicFreakout', '#Video', '#Strange'],
+            'abruptchaos': ['#Chaos', '#Video', '#Unexpected'],
+            'unexpected': ['#Unexpected', '#Video', '#Surprise'],
+            'blackmagicfuckery': ['#BlackMagic', '#Unexplained', '#Physics'],
+            'damnthatsinteresting': ['#Interesting', '#Amazing', '#Video'],
+            'interestingasfuck': ['#Interesting', '#Amazing', '#Fascinating'],
+            'wtf': ['#WTF', '#Strange', '#Bizarre'],
+            'creepy': ['#Creepy', '#Horror', '#Disturbing'],
+            'oddlyterrifying': ['#OddlyTerrifying', '#Creepy', '#Unsettling'],
+            'liminalspace': ['#LiminalSpace', '#Eerie', '#Unsettling'],
+            
+            # International paranormal
+            'paranormaluk': ['#ParanormalUK', '#UK', '#Haunted'],
+            'paranormalindia': ['#ParanormalIndia', '#India', '#Supernatural'],
+            'japanesehorror': ['#JapaneseHorror', '#Japan', '#Horror'],
+            'mexicanfolklore': ['#MexicanFolklore', '#Mexico', '#Folklore'],
+            
+            # Specific creature subs
+            'mothman': ['#Mothman', '#Cryptids', '#WestVirginia'],
+            'chupacabra': ['#Chupacabra', '#Cryptids', '#Mexico'],
+            'jersey_devil': ['#JerseyDevil', '#Cryptids', '#NewJersey'],
+            'thunderbird': ['#Thunderbird', '#Cryptids', '#Giant'],
+            'lakemonsters': ['#LakeMonster', '#Cryptids', '#Water'],
+            'seaserpents': ['#SeaSerpent', '#Cryptids', '#Ocean'],
+            
+            # Investigation and evidence subs
+            'paranormalinvestigators': ['#ParanormalInvestigation', '#GhostHunting', '#Evidence'],
+            'ghosthunting': ['#GhostHunting', '#Investigation', '#Paranormal'],
+            'evp': ['#EVP', '#GhostVoice', '#Paranormal'],
+            'spiritbox': ['#SpiritBox', '#EVP', '#Communication'],
+            'ouija': ['#Ouija', '#SpiritBoard', '#Communication'],
+            'seances': ['#Seance', '#Spirits', '#Communication']
         }
         
         selected_hashtags = []
@@ -485,19 +563,45 @@ Make it shareable and intriguing!"""
             selected_hashtags.extend(reddit_hashtags[subreddit_lower])
         
         # Add general paranormal hashtags
-        general_paranormal = ['#Reddit', '#TrueStory', '#Paranormal', '#Mystery', '#Unexplained']
+        general_paranormal = ['#Reddit', '#TrueStory', '#Paranormal', '#Mystery', '#Unexplained', '#Video', '#CaughtOnCamera']
         selected_hashtags.extend(random.sample(general_paranormal, 2))
         
         # Add hashtags based on keywords in title
         keyword_mapping = {
-            'ghost': ['#Ghost', '#Haunted'],
-            'ufo': ['#UFO', '#Aliens'],
-            'alien': ['#Aliens', '#Extraterrestrial'],
-            'bigfoot': ['#Bigfoot', '#Cryptids'],
-            'demon': ['#Demon', '#Supernatural'],
-            'shadow': ['#ShadowPeople', '#Paranormal'],
-            'dream': ['#Dreams', '#Supernatural'],
-            'time': ['#TimeSlip', '#Strange']
+            'ghost': ['#Ghost', '#Haunted', '#Spirit'],
+            'ufo': ['#UFO', '#Aliens', '#Sighting'],
+            'alien': ['#Aliens', '#Extraterrestrial', '#UFO'],
+            'bigfoot': ['#Bigfoot', '#Sasquatch', '#Cryptids'],
+            'demon': ['#Demon', '#Supernatural', '#Evil'],
+            'shadow': ['#ShadowPeople', '#Paranormal', '#Dark'],
+            'dream': ['#Dreams', '#Supernatural', '#Psychic'],
+            'time': ['#TimeSlip', '#Strange', '#Time'],
+            'video': ['#Video', '#CaughtOnCamera', '#Footage'],
+            'camera': ['#Camera', '#Footage', '#Evidence'],
+            'caught': ['#CaughtOnCamera', '#Evidence', '#Video'],
+            'sighting': ['#Sighting', '#Encounter', '#Witness'],
+            'encounter': ['#Encounter', '#Experience', '#Sighting'],
+            'footage': ['#Footage', '#Video', '#Evidence'],
+            'security': ['#SecurityCam', '#Surveillance', '#Camera'],
+            'trail': ['#TrailCam', '#Wildlife', '#Camera'],
+            'dash': ['#DashCam', '#Driving', '#Video'],
+            'investigation': ['#Investigation', '#Evidence', '#Research'],
+            'evidence': ['#Evidence', '#Proof', '#Investigation'],
+            'ritual': ['#Ritual', '#Occult', '#Supernatural'],
+            'possession': ['#Possession', '#Demon', '#Exorcism'],
+            'haunted': ['#Haunted', '#Ghost', '#Paranormal'],
+            'cryptid': ['#Cryptids', '#Monster', '#Unknown'],
+            'monster': ['#Monster', '#Cryptids', '#Beast'],
+            'creature': ['#Creature', '#Cryptids', '#Unknown'],
+            'supernatural': ['#Supernatural', '#Paranormal', '#Unexplained'],
+            'unexplained': ['#Unexplained', '#Mystery', '#Strange'],
+            'mysterious': ['#Mysterious', '#Mystery', '#Strange'],
+            'strange': ['#Strange', '#Weird', '#Unusual'],
+            'weird': ['#Weird', '#Strange', '#Bizarre'],
+            'scary': ['#Scary', '#Horror', '#Frightening'],
+            'creepy': ['#Creepy', '#Disturbing', '#Unsettling'],
+            'horror': ['#Horror', '#Scary', '#Terrifying'],
+            'terrifying': ['#Terrifying', '#Horror', '#Scary']
         }
         
         for keyword, tags in keyword_mapping.items():

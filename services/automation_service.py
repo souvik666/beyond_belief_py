@@ -303,29 +303,18 @@ class NewsAutomationService:
                 print("❌ Failed to generate Reddit content")
                 return False
             
-            # Get image URL from Reddit post - prefer preview images for videos
-            image_url = reddit_post.get('image_url')
+            # Get media URL from Reddit post (could be video or image)
+            media_url = reddit_post.get('image_url')
+            preview_images = reddit_post.get('preview_images', [])
             
-            # If it's a video URL, try to use preview images instead
-            if image_url and 'v.redd.it' in image_url:
-                preview_images = reddit_post.get('preview_images', [])
-                if preview_images:
-                    # Find the largest preview image
-                    largest_preview = max(preview_images, 
-                                        key=lambda x: (x.get('width', 0) * x.get('height', 0)))
-                    image_url = largest_preview.get('url')
-                    print(f"🎬 Using preview image instead of video: {image_url[:50]}...")
-                else:
-                    print("🎬 Video post with no preview images, posting text-only")
-                    image_url = None
-            
-            # Post to Facebook
+            # Post to Facebook with proper video/image detection
             print("📤 Posting Reddit content to Facebook...")
             facebook_response = self.facebook_service.smart_post(
                 facebook_content, 
-                image_url, 
+                media_url, 
                 reddit_post.get('title', ''), 
-                reddit_post.get('selftext', '')[:200] if reddit_post.get('selftext') else ''
+                reddit_post.get('selftext', '')[:200] if reddit_post.get('selftext') else '',
+                preview_images
             )
             
             if facebook_response and facebook_response.get('id'):

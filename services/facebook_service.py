@@ -129,14 +129,284 @@ class FacebookService:
             print("🔄 Falling back to text-only post...")
             return self.post_text(message)
     
+    def upload_video(self, video_path: str) -> str:
+        """Upload a video and return the video ID for use in posts"""
+        url = f"{self.base_url}/{self.page_id}/videos"
+        
+        try:
+            # Verify video file exists and is readable
+            if not os.path.exists(video_path):
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            
+            # Check file size (Facebook limit is 1GB for videos, but we'll use 100MB for safety)
+            file_size = os.path.getsize(video_path)
+            if file_size > 100 * 1024 * 1024:  # 100MB
+                print(f"⚠️ Video file too large ({file_size} bytes)")
+                return None
+            
+            # Check if file is actually a video by reading first few bytes
+            with open(video_path, 'rb') as f:
+                header = f.read(12)
+                
+            # Basic video format validation
+            is_valid_video = False
+            if header.startswith(b'\x00\x00\x00') and b'ftyp' in header:  # MP4
+                is_valid_video = True
+            elif header.startswith(b'RIFF') and b'AVI' in header:  # AVI
+                is_valid_video = True
+            elif header.startswith(b'\x1a\x45\xdf\xa3'):  # WebM/MKV
+                is_valid_video = True
+            
+            if not is_valid_video:
+                print(f"⚠️ File doesn't appear to be a valid video format")
+                return None
+            
+            with open(video_path, 'rb') as video_file:
+                files = {
+                    'source': ('video.mp4', video_file, 'video/mp4')
+                }
+                
+                data = {
+                    'published': 'false',  # Don't publish immediately, just upload
+                    'access_token': self.page_token
+                }
+                
+                print(f"📹 Uploading video to Facebook (size: {file_size} bytes)")
+                response = requests.post(url, files=files, data=data, timeout=120)
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                video_id = result.get('id')
+                if video_id:
+                    print(f"✅ Video uploaded successfully! Video ID: {video_id}")
+                    return video_id
+                else:
+                    print("❌ No video ID returned from upload")
+                    return None
+                
+        except Exception as e:
+            print(f"❌ Error uploading video: {e}")
+            return None
+
+    def post_video(self, video_path: str, message: str = "") -> Dict[str, Any]:
+        """Post a video with message as a regular post (upload video first, then attach to post)"""
+        try:
+            # First try the simple approach - upload and publish directly with message
+            url = f"{self.base_url}/{self.page_id}/videos"
+            
+            # Verify video file exists and is readable
+            if not os.path.exists(video_path):
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            
+            # Check file size
+            file_size = os.path.getsize(video_path)
+            if file_size > 100 * 1024 * 1024:  # 100MB
+                print(f"⚠️ Video file too large ({file_size} bytes), trying as image...")
+                return self.post_image(video_path, message)
+            
+            # Check if file is actually a video
+            with open(video_path, 'rb') as f:
+                header = f.read(12)
+                
+            is_valid_video = False
+            if header.startswith(b'\x00\x00\x00') and b'ftyp' in header:  # MP4
+                is_valid_video = True
+            elif header.startswith(b'RIFF') and b'AVI' in header:  # AVI
+                is_valid_video = True
+            elif header.startswith(b'\x1a\x45\xdf\xa3'):  # WebM/MKV
+                is_valid_video = True
+            
+            if not is_valid_video:
+                print(f"⚠️ File doesn't appear to be a valid video format, trying as image...")
+                return self.post_image(video_path, message)
+            
+            with open(video_path, 'rb') as video_file:
+                files = {
+                    'source': ('video.mp4', video_file, 'video/mp4')
+                }
+                
+                data = {
+                    'description': message,  # Use description for video posts
+                    'published': 'true',     # Publish immediately as a post
+                    'access_token': self.page_token
+                }
+                
+                print(f"📹 Posting video to Facebook as post (size: {file_size} bytes)")
+                response = requests.post(url, files=files, data=data, timeout=120)
+                
+                # Check for specific Facebook API errors
+                if response.status_code == 400:
+                    try:
+                        error_data = response.json()
+                        error_message = error_data.get('error', {}).get('message', 'Unknown error')
+                        print(f"❌ Facebook API Error: {error_message}")
+                        
+                        # If video posting fails, try as image instead
+                        print("🔄 Video posting failed, trying as image...")
+                        return self.post_image(video_path, message)
+                    except:
+                        print("❌ Failed to parse Facebook error response")
+                        print("🔄 Falling back to image post...")
+                        return self.post_image(video_path, message)
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                # Log successful video post
+                if result.get('id'):
+                    print(f"✅ Video posted successfully as video post! Video ID: {result.get('id')}")
+                
+                return result
+                
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error posting video to Facebook: {e}")
+            print("🔄 Falling back to image post...")
+            return self.post_image(video_path, message)
+        except Exception as e:
+            print(f"❌ Unexpected error posting video: {e}")
+            print("🔄 Falling back to image post...")
+            return self.post_image(video_path, message)
+    
+    def is_video_url(self, url: str) -> bool:
+        """Check if URL points to a video file"""
+        if not url:
+            return False
+        
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
+        video_domains = ['v.redd.it', 'gfycat.com', 'imgur.com/a/', 'streamable.com']
+        
+        url_lower = url.lower()
+        
+        # Check file extensions
+        if any(url_lower.endswith(ext) for ext in video_extensions):
+            return True
+        
+        # Check video domains
+        if any(domain in url_lower for domain in video_domains):
+            return True
+        
+        return False
+    
+    def resolve_reddit_video_url(self, reddit_url: str) -> str:
+        """Resolve Reddit video URL to actual video file URL"""
+        try:
+            if 'v.redd.it' not in reddit_url:
+                return reddit_url
+            
+            print(f"🔍 Resolving Reddit video URL...")
+            
+            # Try to construct direct video URL
+            # Reddit video URLs often follow pattern: https://v.redd.it/VIDEO_ID/DASH_720.mp4
+            if '/DASH_' not in reddit_url and not reddit_url.endswith('.mp4'):
+                # Try common video qualities
+                video_qualities = ['DASH_720.mp4', 'DASH_480.mp4', 'DASH_360.mp4', 'DASH_240.mp4']
+                
+                for quality in video_qualities:
+                    test_url = f"{reddit_url.rstrip('/')}/{quality}"
+                    print(f"🔍 Trying: {test_url}")
+                    
+                    try:
+                        # Test if this URL returns video content
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Accept': 'video/*',
+                        }
+                        
+                        response = requests.head(test_url, headers=headers, timeout=10)
+                        content_type = response.headers.get('content-type', '').lower()
+                        
+                        if 'video/' in content_type or 'mp4' in content_type:
+                            print(f"✅ Found working video URL: {test_url}")
+                            return test_url
+                            
+                    except Exception as e:
+                        print(f"⚠️ Failed to test {quality}: {e}")
+                        continue
+            
+            # If direct resolution fails, return original URL
+            print(f"⚠️ Could not resolve Reddit video URL, returning original")
+            return reddit_url
+            
+        except Exception as e:
+            print(f"❌ Error resolving Reddit video URL: {e}")
+            return reddit_url
+
+    def download_video(self, video_url: str) -> str:
+        """Download a video from URL and save locally"""
+        try:
+            # Resolve Reddit video URLs first
+            if 'v.redd.it' in video_url:
+                resolved_url = self.resolve_reddit_video_url(video_url)
+                if resolved_url != video_url:
+                    video_url = resolved_url
+                else:
+                    print(f"⚠️ Could not resolve Reddit video URL, skipping video download")
+                    return None
+            
+            # Add headers to mimic a browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+            
+            print(f"📹 Downloading video from: {video_url[:50]}...")
+            response = requests.get(video_url, headers=headers, timeout=30, stream=True)
+            response.raise_for_status()
+            
+            # Check content type
+            content_type = response.headers.get('content-type', '').lower()
+            if not any(vid_type in content_type for vid_type in ['video/', 'mp4', 'webm', 'mov', 'avi']):
+                print(f"⚠️ Invalid video content type: {content_type}")
+                return None
+            
+            # Check content length
+            content_length = int(response.headers.get('content-length', 0))
+            if content_length > 100 * 1024 * 1024:  # 100MB limit
+                print(f"⚠️ Video too large: {content_length} bytes")
+                return None
+            
+            # Determine file extension from content type or URL
+            if 'mp4' in content_type or video_url.lower().endswith('.mp4'):
+                ext = '.mp4'
+            elif 'webm' in content_type or video_url.lower().endswith('.webm'):
+                ext = '.webm'
+            elif 'mov' in content_type or video_url.lower().endswith('.mov'):
+                ext = '.mov'
+            elif 'avi' in content_type or video_url.lower().endswith('.avi'):
+                ext = '.avi'
+            else:
+                ext = '.mp4'  # Default
+            
+            # Create filename
+            timestamp = int(time.time())
+            filename = f"reddit_video_{timestamp}{ext}"
+            
+            # Save video
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            file_size = os.path.getsize(filename)
+            print(f"📹 Downloaded video: {filename} ({file_size} bytes)")
+            return filename
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Network error downloading video: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Error downloading video: {e}")
+            return None
+    
     def download_image(self, image_url: str) -> str:
         """Download an image from URL and save locally"""
         try:
-            # Handle Reddit video URLs by trying to get preview image instead
-            if 'v.redd.it' in image_url:
-                print(f"⚠️ Reddit video URL detected, skipping: {image_url}")
-                return None
-            
             # Add headers to mimic a browser request
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -252,35 +522,61 @@ class FacebookService:
             print(f"❌ Error generating image with Meta AI: {e}")
             return None
     
-    def smart_post(self, message: str, image_url: str = None, article_title: str = "", article_description: str = "") -> Dict[str, Any]:
-        """Post content with news image, AI-generated image, or text-only"""
+    def smart_post(self, message: str, media_url: str = None, article_title: str = "", article_description: str = "", preview_images: list = None) -> Dict[str, Any]:
+        """Post content with video, image, AI-generated image, or text-only"""
         try:
-            image_path = None
+            media_path = None
+            is_video = False
             
-            if image_url:
-                # Try to download image from news article
-                print(f"📥 Downloading image from news article...")
-                image_path = self.download_image(image_url)
+            if media_url:
+                # Check if it's a video or image
+                if self.is_video_url(media_url):
+                    print(f"📹 Detected video URL, downloading video...")
+                    media_path = self.download_video(media_url)
+                    is_video = True
+                    
+                    # If video download failed but we have preview images, use them instead
+                    if not media_path and preview_images:
+                        print(f"🎬 Video download failed, trying preview images...")
+                        for preview in preview_images:
+                            preview_url = preview.get('url')
+                            if preview_url:
+                                print(f"📥 Trying preview image: {preview_url[:50]}...")
+                                media_path = self.download_image(preview_url)
+                                if media_path:
+                                    is_video = False  # Now it's an image
+                                    print(f"✅ Using preview image instead of video")
+                                    break
+                else:
+                    print(f"📥 Detected image URL, downloading image...")
+                    media_path = self.download_image(media_url)
+                    is_video = False
                 
-            if not image_path and (article_title or article_description):
-                # Generate image using Meta AI if no news image available
-                print("🎨 No news image available, generating AI image...")
-                image_path = self.generate_image_with_ai(article_title, article_description)
+            if not media_path and (article_title or article_description):
+                # Generate image using Meta AI if no media available
+                print("🎨 No media available, generating AI image...")
+                media_path = self.generate_image_with_ai(article_title, article_description)
+                is_video = False
             
-            if image_path:
-                # Post with image (either downloaded or AI-generated)
-                print("📤 Posting to Facebook with image...")
-                response = self.post_image(image_path, message)
+            if media_path:
+                # Post with media (video, image, or AI-generated image)
+                if is_video:
+                    print("📹 Posting to Facebook with video...")
+                    response = self.post_video(media_path, message)
+                else:
+                    print("📤 Posting to Facebook with image...")
+                    response = self.post_image(media_path, message)
                 
-                # Clean up the image
+                # Clean up the media file
                 try:
-                    os.unlink(image_path)
-                    print("🗑️ Cleaned up temporary image")
+                    os.unlink(media_path)
+                    media_type = "video" if is_video else "image"
+                    print(f"🗑️ Cleaned up temporary {media_type}")
                 except OSError:
                     pass
             else:
                 # Fallback to text-only post
-                print("📤 No image available, posting text-only to Facebook...")
+                print("📤 No media available, posting text-only to Facebook...")
                 response = self.post_text(message)
             
             print("✅ Successfully posted to Facebook!")

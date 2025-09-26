@@ -182,14 +182,103 @@ class RedditService:
         """
         Get top posts from a list of paranormal subs.
         Returns dictionary keyed by subreddit name.
+        Enhanced with video-rich paranormal subreddits.
         """
         if subs is None:
-            subs = ["paranormal", "HighStrangeness", "ghosts", "UFOs", "aliens", "cryptids", "truecreepy", "Glitch_in_the_Matrix", "nosleep", "LetsNotMeet"]
+            # Enhanced list with more video-rich paranormal subreddits
+            subs = [
+                # Original paranormal subs
+                "paranormal", "HighStrangeness", "ghosts", "UFOs", "aliens", "cryptids", 
+                "truecreepy", "Glitch_in_the_Matrix", "nosleep", "LetsNotMeet",
+                
+                # Video-rich paranormal subreddits
+                "ParanormalVideos",      # Dedicated to paranormal videos
+                "GhostVideos",           # Ghost videos specifically
+                "UFOvideos",             # UFO video content
+                "CryptidSightings",      # Cryptid videos and sightings
+                "SecurityCameras",       # Security camera footage (often paranormal)
+                "CaughtOnCamera",        # Various caught on camera content
+                "UnexplainedPhotos",     # Photos and videos of unexplained phenomena
+                "BackyardChickens",      # Sometimes has strange animal videos
+                "TrailCam",              # Trail camera footage (cryptids, strange animals)
+                "DashCam",               # Dash cam videos (sometimes paranormal)
+                
+                # More active paranormal communities
+                "Thetruthishere",        # True paranormal experiences
+                "Humanoidencounters",    # Humanoid creature encounters
+                "CrawlerSightings",      # Crawler creature videos
+                "DogMan",                # Dogman sightings and videos
+                "Bigfoot",               # Bigfoot videos and evidence
+                "SkinWalkers",           # Skinwalker stories and videos
+                "Wendigo",               # Wendigo encounters
+                "Missing411",            # Missing persons cases (often with video evidence)
+                
+                # Horror and creepy video content
+                "CreepyVideos",          # Dedicated to creepy videos
+                "DisturbingMovies",      # Disturbing video content
+                "UnsolvedMysteries",     # Often includes video evidence
+                "RBI",                   # Reddit Bureau of Investigation (video analysis)
+                "Mystery",               # General mystery content with videos
+                
+                # Supernatural and occult
+                "Occult",                # Occult practices and videos
+                "Witchcraft",            # Witchcraft videos and experiences
+                "Demons",                # Demonic encounters and videos
+                "Possession",            # Possession videos and stories
+                "Exorcism",              # Exorcism videos and accounts
+                
+                # Strange phenomena
+                "TimeSlip",              # Time slip experiences
+                "DimensionalJumping",    # Reality shifting videos
+                "MandelaEffect",         # Mandela Effect videos
+                "Retconned",             # Reality changes with video evidence
+                "Telepathy",             # Telepathic experiences
+                "Precognition",          # Precognitive experiences
+                
+                # Video-focused general subs that often have paranormal content
+                "PublicFreakout",        # Sometimes has unexplained videos
+                "AbruptChaos",           # Chaotic videos that might be paranormal
+                "Unexpected",            # Unexpected videos
+                "BlackMagicFuckery",     # Unexplained phenomena videos
+                "Damnthatsinteresting",  # Interesting videos including paranormal
+                "InterestingAsFuck",     # Fascinating videos
+                "WTF",                   # WTF videos including paranormal
+                "Creepy",                # General creepy content with videos
+                "OddlyTerrifying",       # Terrifying videos and images
+                "LiminalSpace",          # Liminal space videos (eerie locations)
+                
+                # International paranormal
+                "ParanormalUK",          # UK paranormal experiences
+                "ParanormalIndia",       # Indian paranormal content
+                "JapaneseHorror",        # Japanese horror videos
+                "MexicanFolklore",       # Mexican paranormal folklore
+                
+                # Specific creature subs with video content
+                "Mothman",               # Mothman sightings
+                "Chupacabra",            # Chupacabra videos
+                "Jersey_Devil",          # Jersey Devil encounters
+                "Thunderbird",           # Thunderbird sightings
+                "LakeMonsters",          # Lake monster videos
+                "SeaSerpents",           # Sea serpent footage
+                
+                # Investigation and evidence subs
+                "ParanormalInvestigators", # Paranormal investigation videos
+                "GhostHunting",          # Ghost hunting videos
+                "EVP",                   # Electronic Voice Phenomena
+                "SpiritBox",             # Spirit box sessions
+                "Ouija",                 # Ouija board videos
+                "Seances",               # Seance videos and experiences
+            ]
 
         trending = {}
         for sub in subs:
-            print(f"Fetching posts from r/{sub}...")
-            trending[sub] = self.get_top_posts(subreddit_name=sub, limit=limit, time_filter=time_filter)
+            try:
+                print(f"Fetching posts from r/{sub}...")
+                trending[sub] = self.get_top_posts(subreddit_name=sub, limit=limit, time_filter=time_filter)
+            except Exception as e:
+                print(f"⚠️ Error fetching from r/{sub}: {e}")
+                # Continue with other subreddits even if one fails
+                continue
         return trending
 
     def search_posts(self, query: str, subreddit_name: str = None, limit: int = 10, sort: str = "relevance") -> List[Dict]:
