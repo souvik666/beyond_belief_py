@@ -1,6 +1,6 @@
 # Facebook News Automation
 
-An automated system that fetches Indian news, generates unique content using Meta AI, creates images, and posts to Facebook every 10 minutes.
+<img width="1382" height="705" alt="Screenshot_20250926_142302" src="https://github.com/user-attachments/assets/bf491d10-e91b-472f-8640-cbf5c8e72766" />
 
 ## Features
 
