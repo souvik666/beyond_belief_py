@@ -70,6 +70,29 @@ Shows a menu with options:
    ./run_facebook_automation.sh
    ```
 
+## 🔧 Reddit API Setup (Required):
+
+To use Reddit content, you need to create a Reddit app:
+
+1. **Go to**: https://www.reddit.com/prefs/apps
+2. **Click**: "Create App" or "Create Another App"
+3. **Fill in**:
+   - **Name**: `beyond_belief_app` (or any name)
+   - **App type**: `script`
+   - **Description**: `Paranormal content automation`
+   - **About URL**: Leave blank
+   - **Redirect URI**: `http://localhost:8080`
+4. **Copy the credentials**:
+   - **Client ID**: The string under your app name
+   - **Client Secret**: The "secret" field
+5. **Add to your .env file** or update the script with:
+   ```
+   REDDIT_CLIENT_ID=your_client_id_here
+   REDDIT_CLIENT_SECRET=your_client_secret_here
+   ```
+
+**Note**: Reddit username/password are optional (only needed for posting to Reddit, which we don't do).
+
 ## 🔧 What's Included in the Script:
 
 ### Environment Variables (Pre-configured):
@@ -79,12 +102,20 @@ Shows a menu with options:
 - ✅ META_PAGE_ID
 - ✅ FACEBOOK_EMAIL
 - ✅ FACEBOOK_PASSWORD
+- ✅ REDDIT_CLIENT_ID
+- ✅ REDDIT_CLIENT_SECRET
+- ✅ REDDIT_USER_AGENT (optional)
+- ✅ REDDIT_USERNAME (optional)
+- ✅ REDDIT_PASSWORD (optional)
 
 ### Features:
+- ✅ **Alternating Content Sources** (News → Reddit → News → Reddit)
 - ✅ **Country-based news queries** (India, Japan, Pakistan, Bangladesh)
-- ✅ **AI content generation** with critical analysis
-- ✅ **Meta AI image generation** when news has no images
-- ✅ **Smart caching system** (processes unposted articles first)
+- ✅ **Reddit paranormal content** (UFOs, ghosts, cryptids, high strangeness)
+- ✅ **AI content generation** with critical analysis for both sources
+- ✅ **Full image support** (news images + Reddit images/videos)
+- ✅ **Meta AI image generation** when content has no images
+- ✅ **Smart caching system** (separate caches for news and Reddit)
 - ✅ **Comprehensive logging** in db/ folder
 - ✅ **Structured Facebook posts** with emojis and formatting
 
@@ -126,10 +157,17 @@ beyond_belief_py/
 ├── run_facebook_automation.sh    # Magic script
 ├── main.py                       # Main application
 ├── services/                     # All services
+│   ├── reddit_service.py        # Reddit API integration
+│   ├── reddit_cache_manager.py  # Reddit cache management
+│   └── ...                      # Other services
 ├── db/                          # Database (auto-created)
 │   ├── posts/                   # Posted articles
 │   ├── logs/                    # Session logs
-│   ├── cache/                   # News cache
+│   ├── cache/                   # Content cache
+│   │   ├── news_cache.json      # News articles
+│   │   ├── posted_articles.json # Posted news
+│   │   ├── reddit_cache.json    # Reddit posts
+│   │   └── posted_reddit.json   # Posted Reddit
 │   └── errors/                  # Error logs
 └── TERMUX_SETUP.md             # This guide
 ```
