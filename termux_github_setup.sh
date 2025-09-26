@@ -20,6 +20,10 @@ export META_PAGE_ID="YOUR_FACEBOOK_PAGE_ID_HERE"
 export FACEBOOK_EMAIL="YOUR_FACEBOOK_EMAIL_HERE"
 export FACEBOOK_PASSWORD="YOUR_FACEBOOK_PASSWORD_HERE"
 
+# Twitter Control (set to false to disable Twitter posting)
+export ENABLE_TWITTER="false"
+
+
 echo "✅ Environment variables configured"
 
 # Function to check system requirements
@@ -434,6 +438,7 @@ META_ACCOUNT_ID=$META_ACCOUNT_ID
 META_PAGE_ID=$META_PAGE_ID
 FACEBOOK_EMAIL=$FACEBOOK_EMAIL
 FACEBOOK_PASSWORD=$FACEBOOK_PASSWORD
+ENABLE_TWITTER=$ENABLE_TWITTER
 EOF
     
     echo "✅ Environment file created"

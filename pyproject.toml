@@ -14,6 +14,8 @@ pillow = "^10.0.0"
 python-crontab = "^3.0.0"
 schedule = "^1.2.0"
 requests-oauthlib = "^2.0.0"
+py-reddit = "^1.1.12"
+praw = "^7.8.1"
 
 
 [build-system]

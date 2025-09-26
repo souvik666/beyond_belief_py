@@ -1,5 +1,5 @@
 """
-Content generator service using Meta AI to create unique content from news
+Content generator service using Meta AI to create unique content from news and Reddit posts
 """
 
 import os
@@ -7,12 +7,21 @@ import random
 from typing import Dict, Any, List
 from meta_ai_api import MetaAI
 from dotenv import load_dotenv
+from .reddit_service import RedditService
 
 load_dotenv()
 
 class ContentGenerator:
     def __init__(self):
         self.ai = MetaAI()
+        
+        # Initialize Reddit service for fetching posts
+        try:
+            self.reddit_service = RedditService()
+            print("✅ Reddit service initialized in ContentGenerator")
+        except Exception as e:
+            print(f"⚠️ Reddit service not available in ContentGenerator: {e}")
+            self.reddit_service = None
         
         # Content templates for variety - concise Facebook posts with critical analysis
         self.templates = [
@@ -318,3 +327,208 @@ Make it memorable and shareable!"""
                 continue
         
         return variants if variants else [self._create_fallback_content(article)]
+
+    # ---------------------------
+    # Reddit Content Generation
+    # ---------------------------
+
+    def generate_content_from_reddit(self, reddit_post: Dict[str, Any], platform: str = "facebook") -> str:
+        """Generate unique content from a Reddit post using Meta AI for Facebook posting"""
+        try:
+            title = reddit_post.get('title', '')
+            selftext = reddit_post.get('selftext', '')
+            subreddit = reddit_post.get('subreddit', '')
+            score = reddit_post.get('score', 0)
+            
+            # Reddit-specific templates for Facebook
+            reddit_templates = [
+                """Create an engaging Facebook post based on this Reddit paranormal story: {title}
+
+IMPORTANT: Keep it under 800 characters total.
+
+Format:
+👻 Attention-grabbing headline with paranormal emoji
+📱 Brief summary of the Reddit story (2 sentences max)
+🤔 Add your own perspective or analysis
+💭 Engaging question to spark discussion
+#hashtags (max 3 paranormal-related)
+
+Make it mysterious and engaging!""",
+
+                """Transform this Reddit post into Facebook content: {title}
+
+LIMIT: 800 characters maximum.
+
+Structure:
+🔮 Mysterious opener
+📝 Key points from the story (concise)
+🧐 Critical analysis or alternative explanation
+❓ Question for audience engagement
+#hashtags
+
+Focus on the paranormal angle!""",
+
+                """Create a Facebook post from this Reddit story: {title}
+
+MAX LENGTH: 800 characters.
+
+Include:
+- Relevant paranormal emoji
+- Story summary (brief)
+- Your take on the experience
+- Engagement question
+- 2-3 hashtags
+
+Make it shareable and intriguing!"""
+            ]
+            
+            # Select template
+            template = random.choice(reddit_templates)
+            char_limit = 800
+            
+            # Create the prompt
+            prompt = template.format(title=title)
+            
+            # Add context from selftext if available
+            if selftext and len(selftext.strip()) > 0:
+                prompt += f"\n\nStory context: {selftext[:300]}..."
+            
+            # Add subreddit context
+            prompt += f"\n\nThis was posted in r/{subreddit} with {score} upvotes."
+            prompt += f"\n\nIMPORTANT: This is for Facebook. Keep it under {char_limit} characters total. Focus on the paranormal/mysterious aspect."
+            
+            # Generate content using Meta AI with delay
+            print(f"🤖 Generating Facebook content for Reddit post: {title[:50]}...")
+            
+            # Add delay before LLM call to prevent rate limiting
+            import time
+            time.sleep(2)
+            
+            response = self.ai.prompt(message=prompt)
+            
+            # Extract the generated text
+            generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
+            
+            # Add relevant hashtags for Reddit content
+            hashtags = self._get_reddit_hashtags(subreddit, title.lower())
+            
+            # Combine content with hashtags
+            final_content = f"{generated_content}\n\n{' '.join(hashtags)}"
+            
+            # Ensure character limit compliance
+            if len(final_content) > char_limit:
+                print(f"⚠️ Content too long ({len(final_content)} chars), truncating...")
+                final_content = final_content[:char_limit-3] + "..."
+            
+            print(f"✅ Generated Facebook Reddit content ({len(final_content)} chars): {final_content[:100]}...")
+            return final_content
+            
+        except Exception as e:
+            print(f"❌ Error generating Reddit content: {e}")
+            return self._create_reddit_fallback_content(reddit_post)
+
+    def fetch_and_cache_reddit_posts(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Fetch paranormal Reddit posts and cache them"""
+        if not self.reddit_service:
+            print("❌ Reddit service not available")
+            return []
+        
+        try:
+            print(f"🔍 Fetching {limit} paranormal Reddit posts...")
+            
+            # Get paranormal trending posts
+            trending_posts = self.reddit_service.get_paranormal_trending(limit=limit//10)
+            
+            # Flatten the posts from all subreddits
+            all_posts = []
+            for subreddit, posts in trending_posts.items():
+                for post in posts:
+                    # Add source information
+                    post['source'] = 'reddit'
+                    post['source_subreddit'] = subreddit
+                    post['content_type'] = 'reddit_post'
+                    all_posts.append(post)
+            
+            # Sort by score (popularity)
+            all_posts.sort(key=lambda x: x.get('score', 0), reverse=True)
+            
+            # Limit to requested number
+            selected_posts = all_posts[:limit]
+            
+            print(f"✅ Fetched {len(selected_posts)} Reddit posts from {len(trending_posts)} subreddits")
+            return selected_posts
+            
+        except Exception as e:
+            print(f"❌ Error fetching Reddit posts: {e}")
+            return []
+
+    def _get_reddit_hashtags(self, subreddit: str, title_text: str) -> List[str]:
+        """Get relevant hashtags for Reddit content"""
+        reddit_hashtags = {
+            'paranormal': ['#Paranormal', '#Ghost', '#Supernatural'],
+            'ghosts': ['#Ghost', '#Haunted', '#Paranormal'],
+            'ufos': ['#UFO', '#Aliens', '#Extraterrestrial'],
+            'aliens': ['#Aliens', '#UFO', '#Space'],
+            'cryptids': ['#Cryptids', '#Bigfoot', '#Mystery'],
+            'truecreepy': ['#Creepy', '#Horror', '#Scary'],
+            'highstrangeness': ['#Strange', '#Unexplained', '#Mystery'],
+            'glitch_in_the_matrix': ['#GlitchInTheMatrix', '#Reality', '#Strange'],
+            'nosleep': ['#Horror', '#Scary', '#Creepy'],
+            'letsnotmeet': ['#TrueStory', '#Scary', '#RealLife']
+        }
+        
+        selected_hashtags = []
+        
+        # Add subreddit-specific hashtags
+        subreddit_lower = subreddit.lower()
+        if subreddit_lower in reddit_hashtags:
+            selected_hashtags.extend(reddit_hashtags[subreddit_lower])
+        
+        # Add general paranormal hashtags
+        general_paranormal = ['#Reddit', '#TrueStory', '#Paranormal', '#Mystery', '#Unexplained']
+        selected_hashtags.extend(random.sample(general_paranormal, 2))
+        
+        # Add hashtags based on keywords in title
+        keyword_mapping = {
+            'ghost': ['#Ghost', '#Haunted'],
+            'ufo': ['#UFO', '#Aliens'],
+            'alien': ['#Aliens', '#Extraterrestrial'],
+            'bigfoot': ['#Bigfoot', '#Cryptids'],
+            'demon': ['#Demon', '#Supernatural'],
+            'shadow': ['#ShadowPeople', '#Paranormal'],
+            'dream': ['#Dreams', '#Supernatural'],
+            'time': ['#TimeSlip', '#Strange']
+        }
+        
+        for keyword, tags in keyword_mapping.items():
+            if keyword in title_text:
+                selected_hashtags.extend(tags)
+        
+        # Remove duplicates and limit to 5 hashtags
+        unique_hashtags = list(dict.fromkeys(selected_hashtags))[:5]
+        return unique_hashtags
+
+    def _create_reddit_fallback_content(self, reddit_post: Dict[str, Any]) -> str:
+        """Create structured fallback content for Reddit posts when AI generation fails"""
+        title = reddit_post.get('title', 'Mysterious Reddit Story')
+        subreddit = reddit_post.get('subreddit', 'paranormal')
+        score = reddit_post.get('score', 0)
+        
+        # Facebook fallback templates for Reddit content
+        fallback_templates = [
+            f"👻 MYSTERIOUS REDDIT STORY\n\nFrom r/{subreddit} ({score} upvotes):\n\n{title}\n\n🤔 What do you think really happened here?\n\nShare your thoughts on this paranormal experience!",
+            
+            f"🔮 PARANORMAL ENCOUNTER\n\nA Reddit user shared this in r/{subreddit}:\n\n{title}\n\n💭 Real experience or imagination?\n\nLet us know what you believe!",
+            
+            f"📱 FROM THE DEPTHS OF REDDIT\n\nr/{subreddit} story:\n{title}\n\n🧐 This got {score} upvotes...\n\n❓ Do you believe in the paranormal?",
+            
+            f"👁️ UNEXPLAINED EXPERIENCE\n\nShared on r/{subreddit}:\n\n{title}\n\n🌟 {score} people found this interesting\n\n💬 What's your take on this story?"
+        ]
+        
+        content = random.choice(fallback_templates)
+        
+        # Add basic hashtags
+        basic_hashtags = ['#Reddit', '#Paranormal', '#TrueStory', '#Mystery']
+        content += f"\n\n{' '.join(random.sample(basic_hashtags, 3))}"
+        
+        return content

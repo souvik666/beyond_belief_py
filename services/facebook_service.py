@@ -132,20 +132,70 @@ class FacebookService:
     def download_image(self, image_url: str) -> str:
         """Download an image from URL and save locally"""
         try:
-            response = requests.get(image_url, timeout=10)
+            # Handle Reddit video URLs by trying to get preview image instead
+            if 'v.redd.it' in image_url:
+                print(f"⚠️ Reddit video URL detected, skipping: {image_url}")
+                return None
+            
+            # Add headers to mimic a browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+            
+            print(f"📥 Downloading image from: {image_url[:50]}...")
+            response = requests.get(image_url, headers=headers, timeout=15)
             response.raise_for_status()
+            
+            # Check content type
+            content_type = response.headers.get('content-type', '').lower()
+            if not any(img_type in content_type for img_type in ['image/', 'jpeg', 'jpg', 'png', 'gif', 'webp']):
+                print(f"⚠️ Invalid content type: {content_type}")
+                return None
+            
+            # Check content length
+            content_length = len(response.content)
+            if content_length == 0:
+                print("⚠️ Empty image content")
+                return None
+            
+            if content_length > 10 * 1024 * 1024:  # 10MB limit
+                print(f"⚠️ Image too large: {content_length} bytes")
+                return None
+            
+            # Determine file extension from content type or URL
+            if 'jpeg' in content_type or 'jpg' in content_type:
+                ext = '.jpg'
+            elif 'png' in content_type:
+                ext = '.png'
+            elif 'gif' in content_type:
+                ext = '.gif'
+            elif 'webp' in content_type:
+                ext = '.webp'
+            elif image_url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                ext = '.' + image_url.split('.')[-1].lower()
+            else:
+                ext = '.jpg'  # Default
             
             # Create filename
             timestamp = int(time.time())
-            filename = f"news_image_{timestamp}.jpg"
+            filename = f"reddit_image_{timestamp}{ext}"
             
             # Save image
             with open(filename, 'wb') as f:
                 f.write(response.content)
             
-            print(f"📥 Downloaded image: {filename}")
+            print(f"📥 Downloaded image: {filename} ({content_length} bytes)")
             return filename
             
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Network error downloading image: {e}")
+            return None
         except Exception as e:
             print(f"❌ Error downloading image: {e}")
             return None

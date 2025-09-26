@@ -16,6 +16,7 @@ from .content_generator import ContentGenerator
 from .facebook_service import FacebookService
 from .twitter_service import TwitterAPI
 from .logging_service import AutomationLogger
+from .reddit_cache_manager import RedditCacheManager
 
 load_dotenv()
 
@@ -25,6 +26,9 @@ class NewsAutomationService:
         self.content_generator = ContentGenerator()
         self.facebook_service = FacebookService()
         self.logger = AutomationLogger()
+        
+        # Initialize Reddit cache manager
+        self.reddit_cache = RedditCacheManager()
         
         # Initialize Twitter service (optional)
         self.twitter_enabled = os.getenv('ENABLE_TWITTER', 'true').lower() == 'true'
@@ -43,11 +47,16 @@ class NewsAutomationService:
         # User preferences (will be set during setup)
         self.preferences = None
         
+        # Alternating posting state (True = News, False = Reddit)
+        self.post_news_next = True
+        
         # Statistics
         self.stats = {
             'total_posts': 0,
             'successful_posts': 0,
             'failed_posts': 0,
+            'news_posts': 0,
+            'reddit_posts': 0,
             'start_time': datetime.now()
         }
         
@@ -157,133 +166,42 @@ class NewsAutomationService:
         return None
     
     def create_and_post_content(self):
-        """Main function to create and post content using cached articles"""
+        """Main function to create and post content - alternates between news and Reddit"""
         self.logger.log_step("CREATE_AND_POST_START", {
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'post_type': 'news' if self.post_news_next else 'reddit'
         })
         
         try:
             print(f"\n🚀 Starting content creation and posting at {datetime.now()}")
             
-            # Ensure we have articles available
-            available_articles = self.ensure_articles_available()
-            
-            if not available_articles:
-                self.logger.log_step("NO_ARTICLES_AVAILABLE", {}, "error")
-                print("❌ No articles available for posting")
-                return
-            
-            # Select an article
-            self.logger.log_step("ARTICLE_SELECTION_START", {
-                'available_articles': len(available_articles)
-            })
-            
-            article = self.select_article_for_posting(available_articles)
-            
-            if not article:
-                self.logger.log_step("NO_SUITABLE_ARTICLE", {}, "error")
-                print("❌ No suitable article found for posting")
-                return
-            
-            self.logger.log_step("ARTICLE_SELECTED", {
-                'title': article.get('title', '')[:100],
-                'query_used': article.get('query_used', ''),
-                'has_image': bool(article.get('image_url') or article.get('urlToImage')),
-                'countries_searched': article.get('countries_searched', '')
-            })
-            
-            # Generate content based on enabled platforms
-            if self.twitter_enabled and self.twitter_service:
-                print("🤖 Generating dual platform content with Meta AI...")
-                self.logger.log_step("AI_CONTENT_GENERATION_START", {
-                    'article_title': article.get('title', '')[:100]
-                })
-                dual_content = self.content_generator.generate_dual_platform_content(article)
+            # Determine what type of content to post
+            if self.post_news_next:
+                print("📰 Posting NEWS content this round")
+                success = self._post_news_content()
+                if success:
+                    self.stats['news_posts'] += 1
             else:
-                print("🤖 Generating Facebook content with Meta AI...")
-                self.logger.log_step("AI_CONTENT_GENERATION_START", {
-                    'article_title': article.get('title', '')[:100]
-                })
-                facebook_content = self.content_generator.generate_content_from_news(article, "facebook")
-                dual_content = {'facebook': facebook_content, 'twitter': ''}
+                print("👻 Posting REDDIT content this round")
+                success = self._post_reddit_content()
+                if success:
+                    self.stats['reddit_posts'] += 1
             
-            if not dual_content or not dual_content.get('facebook'):
-                self.logger.log_content_generation(article, "", False)
-                print("❌ Failed to generate content")
-                return
-            
-            facebook_content = dual_content['facebook']
-            twitter_content = dual_content.get('twitter', '')
-            
-            self.logger.log_content_generation(article, facebook_content, True)
-            
-            # Get image URL from article
-            image_url = article.get('image_url') or article.get('urlToImage')
-            
-            # Post to Facebook
-            self.logger.log_step("FACEBOOK_POST_START", {
-                'content_length': len(facebook_content),
-                'has_image': bool(image_url),
-                'image_url': image_url[:100] if image_url else None
-            })
-            
-            print("📤 Posting to Facebook...")
-            facebook_response = self.facebook_service.smart_post(
-                facebook_content, 
-                image_url, 
-                article.get('title', ''), 
-                article.get('description', '')
-            )
-            
-            # Post to Twitter if available (optional - skip if fails)
-            twitter_success = False
-            if self.twitter_service and twitter_content:
-                try:
-                    print("🐦 Attempting to post to Twitter...")
-                    self.logger.log_step("TWITTER_POST_START", {
-                        'content_length': len(twitter_content),
-                        'has_image': bool(image_url)
-                    })
-                    
-                    twitter_success = self.twitter_service.post_tweet(twitter_content, image_url)
-                    
-                    if twitter_success:
-                        print("✅ Successfully posted to Twitter!")
-                    else:
-                        print("⚠️ Twitter post failed - skipping and continuing with Facebook only")
-                        
-                except Exception as e:
-                    print(f"⚠️ Twitter posting error: {e} - skipping Twitter and continuing")
-                    twitter_success = False
-            elif not self.twitter_service:
-                print("ℹ️ Twitter service not available - posting to Facebook only")
+            if success:
+                # Toggle for next post
+                self.post_news_next = not self.post_news_next
+                next_type = "NEWS" if self.post_news_next else "REDDIT"
+                print(f"🔄 Next post will be: {next_type}")
+                
+                self.stats['total_posts'] += 1
+                self.stats['successful_posts'] += 1
+                
+                print(f"📊 Stats: {self.stats['successful_posts']}/{self.stats['total_posts']} successful posts")
+                print(f"📊 News: {self.stats['news_posts']} | Reddit: {self.stats['reddit_posts']}")
             else:
-                print("ℹ️ No Twitter content generated - posting to Facebook only")
-            
-            # Log the successful posts
-            self.logger.log_post(article, facebook_content, facebook_response, True)
-            
-            response = facebook_response  # Keep for compatibility
-            
-            # Mark article as posted in cache
-            self.news_fetcher.mark_as_posted(article)
-            
-            # Update statistics
-            self.stats['total_posts'] += 1
-            self.stats['successful_posts'] += 1
-            
-            print(f"✅ Successfully posted! Post ID: {response.get('id', 'Unknown')}")
-            print(f"📊 Stats: {self.stats['successful_posts']}/{self.stats['total_posts']} successful posts")
-            
-            # Show cache stats
-            cache_stats = self.news_fetcher.get_cache_stats()
-            print(f"📦 Cache: {cache_stats.get('unposted', 0)} unposted, {cache_stats.get('posted', 0)} posted")
-            
-            self.logger.log_step("CREATE_AND_POST_SUCCESS", {
-                'post_id': response.get('id', ''),
-                'total_posts': self.stats['total_posts'],
-                'successful_posts': self.stats['successful_posts']
-            })
+                self.stats['total_posts'] += 1
+                self.stats['failed_posts'] += 1
+                print("❌ Post failed - will retry same type next time")
             
         except Exception as e:
             error_msg = str(e)
@@ -296,6 +214,133 @@ class NewsAutomationService:
             
             self.stats['total_posts'] += 1
             self.stats['failed_posts'] += 1
+
+    def _post_news_content(self) -> bool:
+        """Post news content to Facebook"""
+        try:
+            # Ensure we have articles available
+            available_articles = self.ensure_articles_available()
+            
+            if not available_articles:
+                print("❌ No news articles available for posting")
+                return False
+            
+            # Select an article
+            article = self.select_article_for_posting(available_articles)
+            
+            if not article:
+                print("❌ No suitable news article found for posting")
+                return False
+            
+            print(f"📋 Selected news article: {article.get('title', '')[:50]}...")
+            
+            # Generate content
+            facebook_content = self.content_generator.generate_content_from_news(article, "facebook")
+            
+            if not facebook_content:
+                print("❌ Failed to generate news content")
+                return False
+            
+            # Get image URL from article
+            image_url = article.get('image_url') or article.get('urlToImage')
+            
+            # Post to Facebook
+            print("📤 Posting news to Facebook...")
+            facebook_response = self.facebook_service.smart_post(
+                facebook_content, 
+                image_url, 
+                article.get('title', ''), 
+                article.get('description', '')
+            )
+            
+            if facebook_response and facebook_response.get('id'):
+                # Mark article as posted in cache
+                self.news_fetcher.mark_as_posted(article)
+                
+                print(f"✅ Successfully posted news! Post ID: {facebook_response.get('id')}")
+                return True
+            else:
+                print("❌ Failed to post news to Facebook")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error posting news content: {e}")
+            return False
+
+    def _post_reddit_content(self) -> bool:
+        """Post Reddit content to Facebook"""
+        try:
+            # Check for unposted Reddit posts in cache
+            unposted_reddit = self.reddit_cache.get_unposted_reddit_posts(limit=10)
+            
+            if not unposted_reddit:
+                print("📦 No Reddit posts in cache, fetching new ones...")
+                # Fetch and cache new Reddit posts
+                new_reddit_posts = self.content_generator.fetch_and_cache_reddit_posts(limit=50)
+                
+                if new_reddit_posts:
+                    # Cache the new posts
+                    self.reddit_cache.cache_reddit_posts(new_reddit_posts)
+                    unposted_reddit = self.reddit_cache.get_unposted_reddit_posts(limit=10)
+                
+                if not unposted_reddit:
+                    print("❌ No Reddit posts available for posting")
+                    return False
+            
+            # Select the best Reddit post
+            reddit_post = self.reddit_cache.select_best_reddit_post()
+            
+            if not reddit_post:
+                print("❌ No suitable Reddit post found for posting")
+                return False
+            
+            print(f"📋 Selected Reddit post: {reddit_post.get('title', '')[:50]}...")
+            
+            # Generate content from Reddit post
+            facebook_content = self.content_generator.generate_content_from_reddit(reddit_post, "facebook")
+            
+            if not facebook_content:
+                print("❌ Failed to generate Reddit content")
+                return False
+            
+            # Get image URL from Reddit post - prefer preview images for videos
+            image_url = reddit_post.get('image_url')
+            
+            # If it's a video URL, try to use preview images instead
+            if image_url and 'v.redd.it' in image_url:
+                preview_images = reddit_post.get('preview_images', [])
+                if preview_images:
+                    # Find the largest preview image
+                    largest_preview = max(preview_images, 
+                                        key=lambda x: (x.get('width', 0) * x.get('height', 0)))
+                    image_url = largest_preview.get('url')
+                    print(f"🎬 Using preview image instead of video: {image_url[:50]}...")
+                else:
+                    print("🎬 Video post with no preview images, posting text-only")
+                    image_url = None
+            
+            # Post to Facebook
+            print("📤 Posting Reddit content to Facebook...")
+            facebook_response = self.facebook_service.smart_post(
+                facebook_content, 
+                image_url, 
+                reddit_post.get('title', ''), 
+                reddit_post.get('selftext', '')[:200] if reddit_post.get('selftext') else ''
+            )
+            
+            if facebook_response and facebook_response.get('id'):
+                # Mark Reddit post as posted
+                self.reddit_cache.mark_reddit_post_as_posted(reddit_post, facebook_response.get('id'))
+                
+                print(f"✅ Successfully posted Reddit content! Post ID: {facebook_response.get('id')}")
+                return True
+            else:
+                print("❌ Failed to post Reddit content to Facebook")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error posting Reddit content: {e}")
+            return False
     
     def _should_refresh_cache(self) -> bool:
         """Check if article cache should be refreshed"""
@@ -318,6 +363,7 @@ class NewsAutomationService:
         """Print current statistics including cache stats"""
         runtime = datetime.now() - self.stats['start_time']
         cache_stats = self.news_fetcher.get_cache_stats()
+        reddit_stats = self.reddit_cache.get_reddit_cache_stats()
         
         print(f"\n📊 Automation Statistics:")
         print(f"   Runtime: {runtime}")
@@ -325,12 +371,20 @@ class NewsAutomationService:
         print(f"   Successful posts: {self.stats['successful_posts']}")
         print(f"   Failed posts: {self.stats['failed_posts']}")
         print(f"   Success rate: {(self.stats['successful_posts']/max(1, self.stats['total_posts'])*100):.1f}%")
+        print(f"   📰 News posts: {self.stats['news_posts']}")
+        print(f"   👻 Reddit posts: {self.stats['reddit_posts']}")
         
-        print(f"\n📦 Cache Statistics:")
+        print(f"\n📦 News Cache Statistics:")
         print(f"   Total articles in cache: {cache_stats.get('total', 0)}")
         print(f"   Unposted articles: {cache_stats.get('unposted', 0)}")
         print(f"   Posted articles: {cache_stats.get('posted', 0)}")
         print(f"   Total posted (all time): {cache_stats.get('total_posted', 0)}")
+        
+        print(f"\n👻 Reddit Cache Statistics:")
+        print(f"   Total Reddit posts in cache: {reddit_stats.get('total_cached', 0)}")
+        print(f"   Unposted Reddit posts: {reddit_stats.get('unposted', 0)}")
+        print(f"   Posted Reddit posts: {reddit_stats.get('posted_from_cache', 0)}")
+        print(f"   Total Reddit posted (all time): {reddit_stats.get('total_posted_ever', 0)}")
     
     def reset_cache(self):
         """Reset the cache and posted articles"""
