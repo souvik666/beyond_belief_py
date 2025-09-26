@@ -9,7 +9,7 @@ from services.automation_service import NewsAutomationService, CronAutomationSer
 
 def main():
     parser = argparse.ArgumentParser(description='Facebook News Automation Service')
-    parser.add_argument('command', choices=['start', 'schedule', 'test', 'setup-cron', 'remove-cron', 'info', 'cache', 'reset-cache', 'stats', 'docker'], 
+    parser.add_argument('command', choices=['start', 'schedule', 'test', 'setup-cron', 'remove-cron', 'info', 'cache', 'reset-cache', 'stats', 'docker', 'reddit-only', 'news-only'], 
                        help='Command to execute')
     parser.add_argument('--interval', type=int, help='Custom interval in minutes for start command')
     
@@ -94,15 +94,45 @@ def main():
         print(f"🚀 Starting automation with {interval} minute interval...")
         automation.start_automation(interval)
     
+    elif args.command == 'reddit-only':
+        # Reddit-only automation mode
+        print("👻 Reddit-Only Mode - Paranormal Content from Reddit")
+        print("🎯 This mode will only post content from Reddit paranormal subreddits")
+        
+        automation = NewsAutomationService()
+        automation.set_content_mode('reddit_only')
+        
+        # Start automation with custom interval or default
+        interval = args.interval if args.interval else 10
+        print(f"🚀 Starting Reddit-only automation with {interval} minute interval...")
+        automation.start_automation(interval)
+    
+    elif args.command == 'news-only':
+        # News-only automation mode
+        print("📰 News-Only Mode - Traditional News Content")
+        print("🎯 This mode will only post news articles (no Reddit content)")
+        
+        automation = NewsAutomationService()
+        automation.set_content_mode('news_only')
+        
+        # Start automation with custom interval or default
+        interval = args.interval if args.interval else 10
+        print(f"🚀 Starting News-only automation with {interval} minute interval...")
+        automation.start_automation(interval)
+    
     elif args.command == 'info':
         # Show page information
         automation = NewsAutomationService()
         automation.get_page_info()
         print("\n🚀 Available Commands:")
-        print("=" * 50)
+        print("=" * 60)
         print("  python main.py schedule              - Interactive schedule selection")
-        print("  python main.py start                 - Start with default (10 min)")
-        print("  python main.py start --interval 5    - Start with custom interval")
+        print("  python main.py start                 - Start mixed mode (10 min)")
+        print("  python main.py start --interval 5    - Start mixed mode with custom interval")
+        print("  python main.py reddit-only           - Start Reddit-only mode (10 min)")
+        print("  python main.py reddit-only --interval 5 - Reddit-only with custom interval")
+        print("  python main.py news-only             - Start News-only mode (10 min)")
+        print("  python main.py news-only --interval 5   - News-only with custom interval")
         print("  python main.py test                  - Run a single test post")
         print("  python main.py cache                 - Setup preferences & cache articles")
         print("  python main.py stats                 - Show statistics")
@@ -110,12 +140,18 @@ def main():
         print("  python main.py setup-cron            - Set up system cron job")
         print("  python main.py remove-cron           - Remove system cron job")
         print("  python main.py info                  - Show this information")
+        print("\n📊 Content Modes:")
+        print("  Mixed Mode (default): Alternates between news and Reddit content")
+        print("  Reddit-Only Mode: Posts only paranormal content from Reddit")
+        print("  News-Only Mode: Posts only traditional news articles")
         print("\n⏰ Schedule Options:")
         print("  Fast: 5 minutes   | Mid: 15 minutes   | Slow: 30 minutes")
-        print("\n📰 News Focus:")
-        print("  Paranormal/Strange news with AI-generated content")
-        print("  Automatic image downloading from news articles")
-        print("  Smart caching system (300 articles per batch)")
+        print("\n📰 Features:")
+        print("  • Video and image posting support")
+        print("  • 60+ paranormal subreddits for Reddit content")
+        print("  • AI-generated content and images")
+        print("  • Smart caching system (300 articles per batch)")
+        print("  • Automatic fallback systems for robust posting")
 
 if __name__ == "__main__":
     main()

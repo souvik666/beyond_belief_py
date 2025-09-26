@@ -47,7 +47,10 @@ class NewsAutomationService:
         # User preferences (will be set during setup)
         self.preferences = None
         
-        # Alternating posting state (True = News, False = Reddit)
+        # Content mode: 'mixed', 'reddit_only', 'news_only'
+        self.content_mode = 'mixed'
+        
+        # Alternating posting state (True = News, False = Reddit) - only used in mixed mode
         self.post_news_next = True
         
         # Statistics
@@ -66,6 +69,22 @@ class NewsAutomationService:
             'db_folder_created': True
         })
     
+    def set_content_mode(self, mode: str):
+        """Set the content mode for the automation service"""
+        valid_modes = ['mixed', 'reddit_only', 'news_only']
+        if mode not in valid_modes:
+            raise ValueError(f"Invalid content mode: {mode}. Must be one of {valid_modes}")
+        
+        self.content_mode = mode
+        print(f"📊 Content mode set to: {mode.upper()}")
+        
+        if mode == 'reddit_only':
+            print("👻 Will only post paranormal content from Reddit subreddits")
+        elif mode == 'news_only':
+            print("📰 Will only post traditional news articles")
+        else:
+            print("🔄 Will alternate between news and Reddit content")
+
     def setup_preferences(self):
         """Setup user preferences for news fetching"""
         if not self.preferences:
@@ -166,32 +185,47 @@ class NewsAutomationService:
         return None
     
     def create_and_post_content(self):
-        """Main function to create and post content - alternates between news and Reddit"""
+        """Main function to create and post content - respects content mode settings"""
+        # Determine post type based on content mode
+        if self.content_mode == 'reddit_only':
+            post_type = 'reddit'
+        elif self.content_mode == 'news_only':
+            post_type = 'news'
+        else:  # mixed mode
+            post_type = 'news' if self.post_news_next else 'reddit'
+        
         self.logger.log_step("CREATE_AND_POST_START", {
             'timestamp': datetime.now().isoformat(),
-            'post_type': 'news' if self.post_news_next else 'reddit'
+            'content_mode': self.content_mode,
+            'post_type': post_type
         })
         
         try:
             print(f"\n🚀 Starting content creation and posting at {datetime.now()}")
+            print(f"📊 Content Mode: {self.content_mode.upper()}")
             
-            # Determine what type of content to post
-            if self.post_news_next:
+            # Post content based on determined type
+            if post_type == 'news':
                 print("📰 Posting NEWS content this round")
                 success = self._post_news_content()
                 if success:
                     self.stats['news_posts'] += 1
-            else:
+            else:  # reddit
                 print("👻 Posting REDDIT content this round")
                 success = self._post_reddit_content()
                 if success:
                     self.stats['reddit_posts'] += 1
             
             if success:
-                # Toggle for next post
-                self.post_news_next = not self.post_news_next
-                next_type = "NEWS" if self.post_news_next else "REDDIT"
-                print(f"🔄 Next post will be: {next_type}")
+                # Only toggle in mixed mode
+                if self.content_mode == 'mixed':
+                    self.post_news_next = not self.post_news_next
+                    next_type = "NEWS" if self.post_news_next else "REDDIT"
+                    print(f"🔄 Next post will be: {next_type}")
+                else:
+                    # In single-mode, always post the same type
+                    mode_type = "NEWS" if self.content_mode == 'news_only' else "REDDIT"
+                    print(f"🔄 Next post will be: {mode_type} (same mode)")
                 
                 self.stats['total_posts'] += 1
                 self.stats['successful_posts'] += 1
@@ -209,7 +243,8 @@ class NewsAutomationService:
             
             self.logger.log_error("CREATE_AND_POST_ERROR", error_msg, {
                 'total_posts': self.stats['total_posts'],
-                'failed_posts': self.stats['failed_posts']
+                'failed_posts': self.stats['failed_posts'],
+                'content_mode': self.content_mode
             })
             
             self.stats['total_posts'] += 1
