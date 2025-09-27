@@ -179,36 +179,78 @@ class RedditService:
             
         return posts
 
-    def get_paranormal_trending(self, subs: List[str] = None, limit: int = 10, time_filter: str = "day") -> Dict[str, List[Dict]]:
+    def get_paranormal_trending(self, subs: List[str] = None, limit: int = 10, time_filter: str = "day", ensure_fresh: bool = True) -> Dict[str, List[Dict]]:
         """
-        Get top posts from a list of paranormal subs.
+        Get top posts from a list of paranormal subs with enhanced freshness strategies.
         Returns dictionary keyed by subreddit name.
-        Enhanced with video-rich paranormal subreddits.
+        Enhanced with video-rich paranormal subreddits and dynamic content fetching.
         """
         import time
+        import random
+        from datetime import datetime, timedelta
         
         if subs is None:
             # Enhanced list with more video-rich paranormal subreddits
             subs = reddit_subs
 
+        print(f"🔍 Fetching fresh content from {len(subs)} subreddits...")
+        print(f"📊 Strategy: {'Fresh content prioritized' if ensure_fresh else 'Standard fetching'}")
+        
+        # Dynamic time filters for freshness
+        time_filters = ["hour", "day", "week"] if ensure_fresh else [time_filter]
+        
+        # Randomize subreddit order for variety
+        if ensure_fresh:
+            subs = random.sample(subs, len(subs))
+            print(f"🔀 Randomized subreddit order for variety")
+
         trending = {}
+        total_posts_fetched = 0
+        
         for i, sub in enumerate(subs):
             try:
-                print(f"Fetching posts from r/{sub}...")
-                trending[sub] = self.get_top_posts(subreddit_name=sub, limit=limit, time_filter=time_filter)
+                print(f"📡 Fetching from r/{sub} ({i+1}/{len(subs)})...")
                 
-                # Add 5-second delay between requests to prevent rate limiting
+                # Use dynamic time filter for freshness
+                current_time_filter = random.choice(time_filters) if ensure_fresh else time_filter
+                
+                # Fetch posts with current time filter
+                posts = self.get_top_posts(subreddit_name=sub, limit=limit, time_filter=current_time_filter)
+                
+                # If no posts with current filter and ensure_fresh is True, try other filters
+                if not posts and ensure_fresh and current_time_filter != "week":
+                    print(f"   ⚠️ No posts with '{current_time_filter}' filter, trying 'week'...")
+                    posts = self.get_top_posts(subreddit_name=sub, limit=limit, time_filter="week")
+                
+                # If still no posts, try hot posts as fallback
+                if not posts and ensure_fresh:
+                    print(f"   ⚠️ No top posts found, trying hot posts...")
+                    posts = self.get_hot_posts(subreddit_name=sub, limit=limit)
+                
+                trending[sub] = posts
+                total_posts_fetched += len(posts)
+                
+                print(f"   ✅ Fetched {len(posts)} posts (filter: {current_time_filter})")
+                
+                # Add 3-second delay between requests to prevent rate limiting
                 if i < len(subs) - 1:  # Don't delay after the last request
-                    from datetime import datetime, timedelta
-                    next_request_time = datetime.now() + timedelta(seconds=5)
-                    print(f"⏳ Waiting 5 seconds before next request...")
-                    print(f"🕐 Next request will start at: {next_request_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                    time.sleep(5)
+                    next_request_time = datetime.now() + timedelta(seconds=3)
+                    print(f"   ⏳ Waiting 3 seconds before next request...")
+                    print(f"   🕐 Next request at: {next_request_time.strftime('%H:%M:%S')}")
+                    time.sleep(3)
                     
             except Exception as e:
-                print(f"⚠️ Error fetching from r/{sub}: {e}")
+                print(f"   ❌ Error fetching from r/{sub}: {e}")
                 # Continue with other subreddits even if one fails
+                trending[sub] = []
                 continue
+        
+        print(f"\n📈 FETCHING SUMMARY:")
+        print(f"   📡 Subreddits processed: {len(subs)}")
+        print(f"   📥 Total posts fetched: {total_posts_fetched}")
+        print(f"   📊 Average posts per subreddit: {total_posts_fetched/len(subs):.1f}")
+        print(f"   🎯 Time filters used: {time_filters}")
+        
         return trending
 
     def search_posts(self, query: str, subreddit_name: str = None, limit: int = 10, sort: str = "relevance") -> List[Dict]:

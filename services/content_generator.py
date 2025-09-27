@@ -5,6 +5,7 @@ Content generator service using Meta AI to create unique content from news and R
 import os
 import random
 from typing import Dict, Any, List
+from datetime import datetime
 from meta_ai_api import MetaAI
 from dotenv import load_dotenv
 from .reddit_service import RedditService
@@ -587,35 +588,70 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             print(f"❌ Error generating Reddit content: {e}")
             return self._create_reddit_fallback_content(reddit_post)
 
-    def fetch_and_cache_reddit_posts(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Fetch paranormal Reddit posts and cache them"""
+    def fetch_and_cache_reddit_posts(self, limit: int = 50, ensure_fresh: bool = True) -> List[Dict[str, Any]]:
+        """Fetch paranormal Reddit posts with enhanced freshness strategies"""
         if not self.reddit_service:
             print("❌ Reddit service not available")
             return []
         
         try:
             print(f"🔍 Fetching {limit} paranormal Reddit posts...")
+            print(f"🎯 Fresh content strategy: {'ENABLED' if ensure_fresh else 'DISABLED'}")
             
-            # Get paranormal trending posts
-            trending_posts = self.reddit_service.get_paranormal_trending(limit=limit//10)
+            # Calculate posts per subreddit for better distribution
+            posts_per_subreddit = max(1, limit // 20)  # Distribute across ~20 subreddits
+            
+            # Get paranormal trending posts with fresh content strategy
+            trending_posts = self.reddit_service.get_paranormal_trending(
+                limit=posts_per_subreddit, 
+                ensure_fresh=ensure_fresh
+            )
             
             # Flatten the posts from all subreddits
             all_posts = []
+            subreddit_count = 0
+            
             for subreddit, posts in trending_posts.items():
+                if posts:  # Only count subreddits that returned posts
+                    subreddit_count += 1
+                    
                 for post in posts:
-                    # Add source information
+                    # Add source information and freshness metadata
                     post['source'] = 'reddit'
                     post['source_subreddit'] = subreddit
                     post['content_type'] = 'reddit_post'
+                    post['fetch_strategy'] = 'fresh' if ensure_fresh else 'standard'
+                    post['fetch_timestamp'] = datetime.now().isoformat()
                     all_posts.append(post)
             
-            # Sort by score (popularity)
-            all_posts.sort(key=lambda x: x.get('score', 0), reverse=True)
+            # Sort by score (popularity) but add some randomness for variety
+            if ensure_fresh:
+                # Mix of popularity and randomness for fresh content
+                import random
+                # Sort by score first
+                all_posts.sort(key=lambda x: x.get('score', 0), reverse=True)
+                # Take top 80% and shuffle them for variety
+                top_80_percent = int(len(all_posts) * 0.8)
+                if top_80_percent > 0:
+                    top_posts = all_posts[:top_80_percent]
+                    remaining_posts = all_posts[top_80_percent:]
+                    random.shuffle(top_posts)
+                    all_posts = top_posts + remaining_posts
+                    print(f"🔀 Applied freshness randomization to top {top_80_percent} posts")
+            else:
+                # Standard sorting by popularity
+                all_posts.sort(key=lambda x: x.get('score', 0), reverse=True)
             
             # Limit to requested number
             selected_posts = all_posts[:limit]
             
-            print(f"✅ Fetched {len(selected_posts)} Reddit posts from {len(trending_posts)} subreddits")
+            print(f"\n📈 REDDIT FETCH SUMMARY:")
+            print(f"   📡 Subreddits with content: {subreddit_count}")
+            print(f"   📥 Total posts collected: {len(all_posts)}")
+            print(f"   ✅ Posts selected for caching: {len(selected_posts)}")
+            print(f"   📊 Average score: {sum(p.get('score', 0) for p in selected_posts) / len(selected_posts):.1f}" if selected_posts else "   📊 Average score: 0")
+            print(f"   🎯 Freshness strategy: {'APPLIED' if ensure_fresh else 'STANDARD'}")
+            
             return selected_posts
             
         except Exception as e:

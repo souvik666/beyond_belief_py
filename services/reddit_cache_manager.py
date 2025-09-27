@@ -45,19 +45,29 @@ class RedditCacheManager:
             print(f"❌ Error saving to {file_path}: {e}")
     
     def _generate_post_id(self, reddit_post: Dict[str, Any]) -> str:
-        """Generate a unique ID for a Reddit post"""
-        # Use Reddit's own ID if available, otherwise generate from title + subreddit
-        if 'id' in reddit_post:
-            return reddit_post['id']
+        """Generate a unique ID for a Reddit post - ALWAYS use Reddit's native ID"""
+        # ALWAYS use Reddit's own ID - this is the primary unique identifier
+        if 'id' in reddit_post and reddit_post['id']:
+            return str(reddit_post['id'])
         
-        # Fallback: generate hash from title + subreddit
-        content = f"{reddit_post.get('title', '')}{reddit_post.get('subreddit', '')}"
-        return hashlib.md5(content.encode()).hexdigest()[:12]
+        # If no Reddit ID, this is likely invalid data - log and create fallback
+        print(f"⚠️ WARNING: Reddit post missing native ID, creating fallback hash")
+        print(f"   Title: {reddit_post.get('title', 'No title')[:50]}...")
+        print(f"   Subreddit: {reddit_post.get('subreddit', 'Unknown')}")
+        
+        # Fallback: generate hash from title + subreddit + created_utc for uniqueness
+        content = f"{reddit_post.get('title', '')}{reddit_post.get('subreddit', '')}{reddit_post.get('created_utc', '')}"
+        fallback_id = hashlib.md5(content.encode()).hexdigest()[:12]
+        print(f"   Generated fallback ID: {fallback_id}")
+        return fallback_id
     
     def cache_reddit_posts(self, posts: List[Dict[str, Any]]) -> int:
-        """Cache Reddit posts, avoiding duplicates"""
+        """Cache Reddit posts, avoiding duplicates with enhanced logging"""
         if not posts:
+            print("⚠️ No posts provided to cache")
             return 0
+        
+        print(f"🔍 Processing {len(posts)} Reddit posts for caching...")
         
         # Load existing cache
         cached_posts = self._load_json(self.reddit_cache_file)
@@ -67,19 +77,57 @@ class RedditCacheManager:
         cached_ids = {self._generate_post_id(post) for post in cached_posts}
         posted_ids = {post.get('post_id', '') for post in posted_posts}
         
+        print(f"📊 Current cache status:")
+        print(f"   - Already cached: {len(cached_ids)} posts")
+        print(f"   - Already posted: {len(posted_ids)} posts")
+        
         new_posts = []
+        duplicate_count = 0
+        already_posted_count = 0
+        
         for post in posts:
             post_id = self._generate_post_id(post)
+            title = post.get('title', 'No title')[:50]
+            subreddit = post.get('subreddit', 'Unknown')
             
-            # Skip if already cached or posted
-            if post_id not in cached_ids and post_id not in posted_ids:
-                # Add metadata
-                post['cached_at'] = datetime.now().isoformat()
-                post['post_id'] = post_id
-                post['posted'] = False
-                
-                new_posts.append(post)
-                cached_ids.add(post_id)
+            # Check if already posted
+            if post_id in posted_ids:
+                already_posted_count += 1
+                print(f"🚫 DUPLICATE (Already Posted): ID={post_id}")
+                print(f"   Title: {title}...")
+                print(f"   Subreddit: r/{subreddit}")
+                print(f"   ⏭️ SKIPPING - Moving to next post")
+                continue
+            
+            # Check if already cached
+            if post_id in cached_ids:
+                duplicate_count += 1
+                print(f"🚫 DUPLICATE (Already Cached): ID={post_id}")
+                print(f"   Title: {title}...")
+                print(f"   Subreddit: r/{subreddit}")
+                print(f"   ⏭️ SKIPPING - Moving to next post")
+                continue
+            
+            # New post - add to cache
+            post['cached_at'] = datetime.now().isoformat()
+            post['post_id'] = post_id
+            post['posted'] = False
+            
+            new_posts.append(post)
+            cached_ids.add(post_id)
+            
+            print(f"✅ NEW POST CACHED: ID={post_id}")
+            print(f"   Title: {title}...")
+            print(f"   Subreddit: r/{subreddit}")
+            print(f"   Score: {post.get('score', 0)} upvotes")
+        
+        # Summary logging
+        print(f"\n📈 CACHING SUMMARY:")
+        print(f"   📥 Total posts processed: {len(posts)}")
+        print(f"   ✅ New posts cached: {len(new_posts)}")
+        print(f"   🚫 Duplicates (already cached): {duplicate_count}")
+        print(f"   🚫 Duplicates (already posted): {already_posted_count}")
+        print(f"   📊 Duplicate rate: {((duplicate_count + already_posted_count) / len(posts) * 100):.1f}%")
         
         if new_posts:
             # Add new posts to cache
@@ -91,9 +139,9 @@ class RedditCacheManager:
             # Save updated cache
             self._save_json(self.reddit_cache_file, cached_posts)
             
-            print(f"✅ Cached {len(new_posts)} new Reddit posts")
+            print(f"💾 Cache updated with {len(new_posts)} new Reddit posts")
         else:
-            print("ℹ️ No new Reddit posts to cache")
+            print("ℹ️ No new Reddit posts to cache - all were duplicates")
         
         return len(new_posts)
     

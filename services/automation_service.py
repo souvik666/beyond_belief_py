@@ -345,17 +345,23 @@ class NewsAutomationService:
             unposted_reddit = self.reddit_cache.get_unposted_reddit_posts(limit=10)
             
             if not unposted_reddit:
-                print("📦 No Reddit posts in cache, fetching new ones...")
-                # Fetch and cache new Reddit posts
-                new_reddit_posts = self.content_generator.fetch_and_cache_reddit_posts(limit=50)
+                print("📦 No Reddit posts in cache, fetching new ones with fresh content strategy...")
+                # Fetch and cache new Reddit posts with enhanced freshness
+                new_reddit_posts = self.content_generator.fetch_and_cache_reddit_posts(
+                    limit=50, 
+                    ensure_fresh=True  # Enable fresh content strategy
+                )
                 
                 if new_reddit_posts:
-                    # Cache the new posts
-                    self.reddit_cache.cache_reddit_posts(new_reddit_posts)
+                    # Cache the new posts with enhanced duplicate detection
+                    cached_count = self.reddit_cache.cache_reddit_posts(new_reddit_posts)
+                    print(f"💾 Successfully cached {cached_count} new Reddit posts")
                     unposted_reddit = self.reddit_cache.get_unposted_reddit_posts(limit=10)
+                else:
+                    print("⚠️ No new Reddit posts fetched - all may be duplicates")
                 
                 if not unposted_reddit:
-                    print("❌ No Reddit posts available for posting")
+                    print("❌ No Reddit posts available for posting after fetching")
                     return False
             
             # Select the best Reddit post
