@@ -106,6 +106,30 @@ Make it memorable and shareable!"""
             'education': ['#Education', '#Students', '#Learning', '#Schools']
         }
     
+    def _clean_generated_content(self, content: str) -> str:
+        """Clean up generated content by removing unwanted quotes and formatting"""
+        if not content:
+            return content
+        
+        # Remove quotes that wrap the entire content
+        content = content.strip()
+        
+        # Remove leading and trailing quotes if they wrap the entire content
+        if (content.startswith('"') and content.endswith('"')) or \
+           (content.startswith("'") and content.endswith("'")):
+            content = content[1:-1].strip()
+        
+        # Remove quotes around specific patterns like "FACEBOOK POST" or "TWITTER POST"
+        import re
+        content = re.sub(r'^"([^"]+)"$', r'\1', content)
+        content = re.sub(r"^'([^']+)'$", r'\1', content)
+        
+        # Remove any remaining unwanted quote patterns
+        content = re.sub(r'"([A-Z\s]+)"', r'\1', content)  # Remove quotes around ALL CAPS text
+        content = re.sub(r"'([A-Z\s]+)'", r'\1', content)  # Remove quotes around ALL CAPS text
+        
+        return content.strip()
+
     def generate_content_from_news(self, article: Dict[str, Any], platform: str = "facebook") -> str:
         """Generate unique content from a news article using Meta AI for specific platform"""
         try:
@@ -157,9 +181,12 @@ Make it memorable and shareable!"""
             # Extract the generated text
             generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
             
-            # Let the AI decide hashtags - they should already be included in generated_content
+            # Clean up the generated content to remove unwanted quotes
+            cleaned_content = self._clean_generated_content(generated_content)
+            
+            # Let the AI decide hashtags - they should already be included in cleaned_content
             # No need to add separate hashtags since the prompt asks for hashtags
-            final_content = generated_content
+            final_content = cleaned_content
             
             # Ensure character limit compliance
             if len(final_content) > char_limit:
@@ -432,9 +459,12 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             # Extract the generated text
             generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
             
-            # Let the AI decide hashtags - they should already be included in generated_content
+            # Clean up the generated content to remove unwanted quotes
+            cleaned_content = self._clean_generated_content(generated_content)
+            
+            # Let the AI decide hashtags - they should already be included in cleaned_content
             # No need to add separate hashtags since the prompt asks for 1-2 hashtags
-            final_content = generated_content
+            final_content = cleaned_content
             
             # Ensure character limit compliance
             if len(final_content) > char_limit:
