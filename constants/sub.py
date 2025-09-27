@@ -135,6 +135,7 @@ reddit_subs = [
     "Futurology",
     "CoronavirusIndia",
     "TheOnion",
+    "developersIndia",
     # --- Hinduism / Indian Spirituality Subreddits ---
     "hinduism",
     "SanatanDharma",
@@ -146,6 +147,7 @@ reddit_subs = [
     "Vaishnavism",
     "HinduCulture",
     "Upanishads",
+    "Tantrasadhaks",
     # --- Indian News Subreddits ---
     "IndiaInNews",  # curated Indian news
     "IndianMedia",  # discussion about Indian media

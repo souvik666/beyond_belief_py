@@ -588,7 +588,7 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             print(f"❌ Error generating Reddit content: {e}")
             return self._create_reddit_fallback_content(reddit_post)
 
-    def fetch_and_cache_reddit_posts(self, limit: int = 50, ensure_fresh: bool = True) -> List[Dict[str, Any]]:
+    def fetch_and_cache_reddit_posts(self, limit: int = 50, ensure_fresh: bool = True, logger=None, cache_manager=None) -> List[Dict[str, Any]]:
         """Fetch paranormal Reddit posts with enhanced freshness strategies"""
         if not self.reddit_service:
             print("❌ Reddit service not available")
@@ -599,12 +599,14 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             print(f"🎯 Fresh content strategy: {'ENABLED' if ensure_fresh else 'DISABLED'}")
             
             # Calculate posts per subreddit for better distribution
-            posts_per_subreddit = max(1, limit // 20)  # Distribute across ~20 subreddits
+            posts_per_subreddit = 10  # Always fetch 10 posts per subreddit as requested
             
-            # Get paranormal trending posts with fresh content strategy
+            # Get paranormal trending posts with fresh content strategy, pass logger and enable progressive caching
             trending_posts = self.reddit_service.get_paranormal_trending(
                 limit=posts_per_subreddit, 
-                ensure_fresh=ensure_fresh
+                ensure_fresh=ensure_fresh,
+                logger=logger,
+                cache_manager=cache_manager  # Pass cache manager for progressive caching
             )
             
             # Flatten the posts from all subreddits

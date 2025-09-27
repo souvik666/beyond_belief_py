@@ -346,10 +346,12 @@ class NewsAutomationService:
             
             if not unposted_reddit:
                 print("📦 No Reddit posts in cache, fetching new ones with fresh content strategy...")
-                # Fetch and cache new Reddit posts with enhanced freshness
+                # Fetch and cache new Reddit posts with enhanced freshness, pass logger and enable progressive caching
                 new_reddit_posts = self.content_generator.fetch_and_cache_reddit_posts(
                     limit=50, 
-                    ensure_fresh=True  # Enable fresh content strategy
+                    ensure_fresh=True,  # Enable fresh content strategy
+                    logger=self.logger,  # Pass logger for detailed content counting
+                    cache_manager=self.reddit_cache  # Enable progressive caching
                 )
                 
                 if new_reddit_posts:

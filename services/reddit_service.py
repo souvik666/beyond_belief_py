@@ -179,11 +179,12 @@ class RedditService:
             
         return posts
 
-    def get_paranormal_trending(self, subs: List[str] = None, limit: int = 10, time_filter: str = "day", ensure_fresh: bool = True) -> Dict[str, List[Dict]]:
+    def get_paranormal_trending(self, subs: List[str] = None, limit: int = 10, time_filter: str = "day", ensure_fresh: bool = True, logger=None, cache_manager=None) -> Dict[str, List[Dict]]:
         """
         Get top posts from a list of paranormal subs with enhanced freshness strategies.
         Returns dictionary keyed by subreddit name.
         Enhanced with video-rich paranormal subreddits and dynamic content fetching.
+        Now includes progressive caching to prevent data loss.
         """
         import time
         import random
@@ -195,6 +196,18 @@ class RedditService:
 
         print(f"🔍 Fetching fresh content from {len(subs)} subreddits...")
         print(f"📊 Strategy: {'Fresh content prioritized' if ensure_fresh else 'Standard fetching'}")
+        print(f"💾 Progressive caching: {'ENABLED' if cache_manager else 'DISABLED'}")
+        
+        # Log the start of Reddit content fetching
+        if logger:
+            logger.log_step("REDDIT_CONTENT_FETCH_START", {
+                'total_subreddits': len(subs),
+                'limit_per_sub': limit,
+                'time_filter': time_filter,
+                'ensure_fresh': ensure_fresh,
+                'progressive_caching': cache_manager is not None,
+                'strategy': 'Fresh content prioritized' if ensure_fresh else 'Standard fetching'
+            })
         
         # Dynamic time filters for freshness
         time_filters = ["hour", "day", "week"] if ensure_fresh else [time_filter]
@@ -206,8 +219,13 @@ class RedditService:
 
         trending = {}
         total_posts_fetched = 0
+        successful_subs = 0
+        failed_subs = 0
+        subreddit_stats = []
+        cached_posts_count = 0
         
         for i, sub in enumerate(subs):
+            sub_start_time = datetime.now()
             try:
                 print(f"📡 Fetching from r/{sub} ({i+1}/{len(subs)})...")
                 
@@ -228,9 +246,78 @@ class RedditService:
                     posts = self.get_hot_posts(subreddit_name=sub, limit=limit)
                 
                 trending[sub] = posts
-                total_posts_fetched += len(posts)
+                posts_count = len(posts)
+                total_posts_fetched += posts_count
                 
-                print(f"   ✅ Fetched {len(posts)} posts (filter: {current_time_filter})")
+                # PROGRESSIVE CACHING: Cache posts immediately after fetching from each subreddit
+                if cache_manager and posts:
+                    try:
+                        # Add metadata to posts before caching
+                        for post in posts:
+                            post['source'] = 'reddit'
+                            post['source_subreddit'] = sub
+                            post['content_type'] = 'reddit_post'
+                            post['fetch_strategy'] = 'fresh' if ensure_fresh else 'standard'
+                            post['fetch_timestamp'] = datetime.now().isoformat()
+                        
+                        # Cache posts from this subreddit immediately
+                        cached_count = cache_manager.cache_reddit_posts(posts)
+                        cached_posts_count += cached_count
+                        print(f"   💾 Cached {cached_count} posts from r/{sub} immediately")
+                        
+                        if logger:
+                            logger.log_step("PROGRESSIVE_CACHE_SAVE", {
+                                'subreddit': sub,
+                                'posts_cached': cached_count,
+                                'total_cached_so_far': cached_posts_count,
+                                'subreddit_index': i + 1
+                            })
+                    except Exception as cache_error:
+                        print(f"   ⚠️ Failed to cache posts from r/{sub}: {cache_error}")
+                        if logger:
+                            logger.log_step("PROGRESSIVE_CACHE_ERROR", {
+                                'subreddit': sub,
+                                'error': str(cache_error)
+                            }, "warning")
+                
+                # Calculate fetch time for this subreddit
+                sub_fetch_time = (datetime.now() - sub_start_time).total_seconds()
+                
+                # Track subreddit statistics
+                sub_stats = {
+                    'subreddit': sub,
+                    'posts_fetched': posts_count,
+                    'time_filter_used': current_time_filter,
+                    'fetch_time_seconds': round(sub_fetch_time, 2),
+                    'success': True
+                }
+                subreddit_stats.append(sub_stats)
+                
+                if posts_count > 0:
+                    successful_subs += 1
+                    print(f"   ✅ Fetched {posts_count} posts (filter: {current_time_filter}) in {sub_fetch_time:.1f}s")
+                    
+                    # Log detailed content count for this subreddit
+                    if logger:
+                        logger.log_step("SUBREDDIT_CONTENT_FETCHED", {
+                            'subreddit': sub,
+                            'posts_count': posts_count,
+                            'time_filter': current_time_filter,
+                            'fetch_time_seconds': sub_fetch_time,
+                            'posts_with_images': sum(1 for post in posts if post.get('has_image')),
+                            'posts_with_videos': sum(1 for post in posts if post.get('post_hint') == 'hosted:video'),
+                            'average_score': round(sum(post.get('score', 0) for post in posts) / max(1, posts_count), 1),
+                            'subreddit_index': i + 1,
+                            'total_subreddits': len(subs)
+                        })
+                else:
+                    print(f"   ⚠️ No posts fetched from r/{sub} (filter: {current_time_filter})")
+                    if logger:
+                        logger.log_step("SUBREDDIT_NO_CONTENT", {
+                            'subreddit': sub,
+                            'time_filter': current_time_filter,
+                            'fetch_time_seconds': sub_fetch_time
+                        }, "warning")
                 
                 # Add 3-second delay between requests to prevent rate limiting
                 if i < len(subs) - 1:  # Don't delay after the last request
@@ -240,16 +327,80 @@ class RedditService:
                     time.sleep(3)
                     
             except Exception as e:
+                failed_subs += 1
+                sub_fetch_time = (datetime.now() - sub_start_time).total_seconds()
+                
                 print(f"   ❌ Error fetching from r/{sub}: {e}")
+                
+                # Track failed subreddit statistics
+                sub_stats = {
+                    'subreddit': sub,
+                    'posts_fetched': 0,
+                    'time_filter_used': current_time_filter if 'current_time_filter' in locals() else time_filter,
+                    'fetch_time_seconds': round(sub_fetch_time, 2),
+                    'success': False,
+                    'error': str(e)
+                }
+                subreddit_stats.append(sub_stats)
+                
+                # Log the error for this subreddit
+                if logger:
+                    logger.log_step("SUBREDDIT_FETCH_ERROR", {
+                        'subreddit': sub,
+                        'error': str(e),
+                        'fetch_time_seconds': sub_fetch_time
+                    }, "error")
+                
                 # Continue with other subreddits even if one fails
                 trending[sub] = []
                 continue
         
+        # Calculate comprehensive statistics
+        total_fetch_time = sum(stat['fetch_time_seconds'] for stat in subreddit_stats)
+        posts_with_content = sum(1 for stat in subreddit_stats if stat['posts_fetched'] > 0)
+        
         print(f"\n📈 FETCHING SUMMARY:")
         print(f"   📡 Subreddits processed: {len(subs)}")
+        print(f"   ✅ Successful subreddits: {successful_subs}")
+        print(f"   ❌ Failed subreddits: {failed_subs}")
         print(f"   📥 Total posts fetched: {total_posts_fetched}")
+        print(f"   💾 Total posts cached: {cached_posts_count}")
         print(f"   📊 Average posts per subreddit: {total_posts_fetched/len(subs):.1f}")
+        print(f"   📊 Average posts per successful subreddit: {total_posts_fetched/max(1, successful_subs):.1f}")
         print(f"   🎯 Time filters used: {time_filters}")
+        print(f"   ⏱️ Total fetch time: {total_fetch_time:.1f} seconds")
+        
+        # Log comprehensive summary
+        if logger:
+            # Sort subreddits by posts fetched for better insights
+            top_performing_subs = sorted([s for s in subreddit_stats if s['success']], 
+                                       key=lambda x: x['posts_fetched'], reverse=True)[:10]
+            
+            logger.log_step("REDDIT_CONTENT_FETCH_COMPLETE", {
+                'total_subreddits_processed': len(subs),
+                'successful_subreddits': successful_subs,
+                'failed_subreddits': failed_subs,
+                'total_posts_fetched': total_posts_fetched,
+                'total_posts_cached': cached_posts_count,
+                'average_posts_per_subreddit': round(total_posts_fetched/len(subs), 2),
+                'average_posts_per_successful_sub': round(total_posts_fetched/max(1, successful_subs), 2),
+                'total_fetch_time_seconds': round(total_fetch_time, 2),
+                'average_fetch_time_per_sub': round(total_fetch_time/len(subs), 2),
+                'time_filters_used': time_filters,
+                'top_performing_subreddits': top_performing_subs[:5],  # Top 5 for logging
+                'subreddits_with_no_content': [s['subreddit'] for s in subreddit_stats if s['posts_fetched'] == 0],
+                'content_distribution': {
+                    'subs_with_1_5_posts': sum(1 for s in subreddit_stats if 1 <= s['posts_fetched'] <= 5),
+                    'subs_with_6_10_posts': sum(1 for s in subreddit_stats if 6 <= s['posts_fetched'] <= 10),
+                    'subs_with_more_than_10_posts': sum(1 for s in subreddit_stats if s['posts_fetched'] > 10)
+                },
+                'progressive_caching_enabled': cache_manager is not None
+            })
+            
+            # Log detailed per-subreddit breakdown for analysis
+            logger.log_step("SUBREDDIT_DETAILED_BREAKDOWN", {
+                'subreddit_stats': subreddit_stats
+            })
         
         return trending
 
