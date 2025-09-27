@@ -38,10 +38,13 @@ class FacebookService:
         """Post a text message to the Facebook page"""
         url = f"{self.base_url}/{self.page_id}/feed"
         
-        # Limit message length to Facebook's limits (around 1000 characters for safety)
-        if len(message) > 1000:
-            print(f"⚠️ Message too long ({len(message)} chars), truncating to 1000 chars")
-            message = message[:997] + "..."
+        # Facebook actually supports much longer posts (up to 63,206 characters)
+        # Only truncate if absolutely necessary (over 60,000 characters)
+        if len(message) > 60000:
+            print(f"⚠️ Message extremely long ({len(message)} chars), truncating to 60000 chars")
+            message = message[:59997] + "..."
+        else:
+            print(f"📝 Posting message ({len(message)} characters)")
         
         params = {
             'message': message,
@@ -129,12 +132,660 @@ class FacebookService:
             print("🔄 Falling back to text-only post...")
             return self.post_text(message)
     
+    def upload_video(self, video_path: str) -> str:
+        """Upload a video and return the video ID for use in posts"""
+        url = f"{self.base_url}/{self.page_id}/videos"
+        
+        try:
+            # Verify video file exists and is readable
+            if not os.path.exists(video_path):
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            
+            # Check file size (Facebook limit is 1GB for videos, but we'll use 100MB for safety)
+            file_size = os.path.getsize(video_path)
+            if file_size > 100 * 1024 * 1024:  # 100MB
+                print(f"⚠️ Video file too large ({file_size} bytes)")
+                return None
+            
+            # Check if file is actually a video by reading first few bytes
+            with open(video_path, 'rb') as f:
+                header = f.read(12)
+                
+            # Basic video format validation
+            is_valid_video = False
+            if header.startswith(b'\x00\x00\x00') and b'ftyp' in header:  # MP4
+                is_valid_video = True
+            elif header.startswith(b'RIFF') and b'AVI' in header:  # AVI
+                is_valid_video = True
+            elif header.startswith(b'\x1a\x45\xdf\xa3'):  # WebM/MKV
+                is_valid_video = True
+            
+            if not is_valid_video:
+                print(f"⚠️ File doesn't appear to be a valid video format")
+                return None
+            
+            with open(video_path, 'rb') as video_file:
+                files = {
+                    'source': ('video.mp4', video_file, 'video/mp4')
+                }
+                
+                data = {
+                    'published': 'false',  # Don't publish immediately, just upload
+                    'access_token': self.page_token
+                }
+                
+                print(f"📹 Uploading video to Facebook (size: {file_size} bytes)")
+                response = requests.post(url, files=files, data=data, timeout=120)
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                video_id = result.get('id')
+                if video_id:
+                    print(f"✅ Video uploaded successfully! Video ID: {video_id}")
+                    return video_id
+                else:
+                    print("❌ No video ID returned from upload")
+                    return None
+                
+        except Exception as e:
+            print(f"❌ Error uploading video: {e}")
+            return None
+
+    def post_video(self, video_path: str, message: str = "") -> Dict[str, Any]:
+        """Post a video with message as a regular post (upload video first, then attach to post)"""
+        try:
+            # First try the simple approach - upload and publish directly with message
+            url = f"{self.base_url}/{self.page_id}/videos"
+            
+            # Verify video file exists and is readable
+            if not os.path.exists(video_path):
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            
+            # Check file size
+            file_size = os.path.getsize(video_path)
+            if file_size > 100 * 1024 * 1024:  # 100MB
+                print(f"⚠️ Video file too large ({file_size} bytes), trying as image...")
+                return self.post_image(video_path, message)
+            
+            # Check if file is actually a video
+            with open(video_path, 'rb') as f:
+                header = f.read(12)
+                
+            is_valid_video = False
+            if header.startswith(b'\x00\x00\x00') and b'ftyp' in header:  # MP4
+                is_valid_video = True
+            elif header.startswith(b'RIFF') and b'AVI' in header:  # AVI
+                is_valid_video = True
+            elif header.startswith(b'\x1a\x45\xdf\xa3'):  # WebM/MKV
+                is_valid_video = True
+            
+            if not is_valid_video:
+                print(f"⚠️ File doesn't appear to be a valid video format, trying as image...")
+                return self.post_image(video_path, message)
+            
+            with open(video_path, 'rb') as video_file:
+                files = {
+                    'source': ('video.mp4', video_file, 'video/mp4')
+                }
+                
+                data = {
+                    'description': message,  # Use description for video posts
+                    'published': 'true',     # Publish immediately as a post
+                    'access_token': self.page_token
+                }
+                
+                print(f"📹 Posting video to Facebook as post (size: {file_size} bytes)")
+                response = requests.post(url, files=files, data=data, timeout=120)
+                
+                # Check for specific Facebook API errors
+                if response.status_code == 400:
+                    try:
+                        error_data = response.json()
+                        error_message = error_data.get('error', {}).get('message', 'Unknown error')
+                        print(f"❌ Facebook API Error: {error_message}")
+                        
+                        # If video posting fails, try as image instead
+                        print("🔄 Video posting failed, trying as image...")
+                        return self.post_image(video_path, message)
+                    except:
+                        print("❌ Failed to parse Facebook error response")
+                        print("🔄 Falling back to image post...")
+                        return self.post_image(video_path, message)
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                # Log successful video post
+                if result.get('id'):
+                    print(f"✅ Video posted successfully as video post! Video ID: {result.get('id')}")
+                
+                return result
+                
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error posting video to Facebook: {e}")
+            print("🔄 Falling back to image post...")
+            return self.post_image(video_path, message)
+        except Exception as e:
+            print(f"❌ Unexpected error posting video: {e}")
+            print("🔄 Falling back to image post...")
+            return self.post_image(video_path, message)
+    
+    def is_video_url(self, url: str) -> bool:
+        """Check if URL points to a video file"""
+        if not url:
+            return False
+        
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
+        video_domains = ['v.redd.it', 'gfycat.com', 'imgur.com/a/', 'streamable.com']
+        
+        url_lower = url.lower()
+        
+        # Check file extensions
+        if any(url_lower.endswith(ext) for ext in video_extensions):
+            return True
+        
+        # Check video domains
+        if any(domain in url_lower for domain in video_domains):
+            return True
+        
+        return False
+    
+    def resolve_reddit_video_url(self, reddit_url: str) -> str:
+        """Aggressively resolve Reddit video URL - SKIP HLS, prioritize direct MP4s"""
+        try:
+            if 'v.redd.it' not in reddit_url:
+                return reddit_url
+            
+            print(f"🔍 Aggressively resolving Reddit video URL - PRIORITIZING DIRECT MP4s...")
+            
+            # Try to get the Reddit post data to find the fallback URL
+            if '/DASH_' not in reddit_url and not reddit_url.endswith('.mp4'):
+                # PRIORITIZE DIRECT MP4 URLs FIRST (skip problematic HLS)
+                video_formats = [
+                    # Fallback URLs (often have audio and work better)
+                    'DASH_720.mp4?source=fallback',
+                    'DASH_480.mp4?source=fallback', 
+                    'DASH_360.mp4?source=fallback',
+                    'DASH_240.mp4?source=fallback',
+                    
+                    # Direct MP4 URLs (most reliable)
+                    'DASH_720.mp4',
+                    'DASH_480.mp4',
+                    'DASH_360.mp4', 
+                    'DASH_240.mp4',
+                    'DASH_96.mp4',
+                    
+                    # Alternative formats
+                    'DASH_1080.mp4',
+                    'DASH_720_v2.mp4',
+                    'DASH_480_v2.mp4',
+                    
+                    # Try without DASH prefix
+                    '720.mp4',
+                    '480.mp4',
+                    '360.mp4',
+                    '240.mp4',
+                    
+                    # Try with different extensions
+                    'video.mp4',
+                    'video.webm',
+                    'video.mov',
+                    
+                    # Audio streams (we can try these too)
+                    'DASH_audio.mp4',
+                    'audio.mp4',
+                    
+                    # HLS playlists LAST (problematic with yt-dlp)
+                    'HLSPlaylist.m3u8',
+                ]
+                
+                for format_name in video_formats:
+                    test_url = f"{reddit_url.rstrip('/')}/{format_name}"
+                    print(f"🔍 Trying format: {format_name}")
+                    
+                    try:
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Accept': 'video/*,application/vnd.apple.mpegurl,*/*',
+                            'Referer': 'https://www.reddit.com/',
+                        }
+                        
+                        response = requests.head(test_url, headers=headers, timeout=10)
+                        content_type = response.headers.get('content-type', '').lower()
+                        content_length = response.headers.get('content-length', '0')
+                        
+                        # PRIORITIZE DIRECT VIDEO CONTENT OVER HLS
+                        if any(vid_type in content_type for vid_type in ['video/', 'mp4', 'webm', 'mov']):
+                            print(f"✅ Found DIRECT video URL: {test_url}")
+                            print(f"   Content-Type: {content_type}")
+                            print(f"   Content-Length: {content_length}")
+                            return test_url
+                        
+                        # Only accept HLS if we have substantial content and no direct video found
+                        elif 'mpegurl' in content_type and int(content_length) > 1000:
+                            print(f"⚠️ Found HLS playlist (will try but may fail): {test_url}")
+                            print(f"   Content-Type: {content_type}")
+                            print(f"   Content-Length: {content_length}")
+                            # Continue looking for direct MP4s, but save this as backup
+                            hls_backup = test_url
+                            continue
+                            
+                    except Exception as e:
+                        print(f"⚠️ Failed to test {format_name}: {e}")
+                        continue
+                
+                # If we found an HLS backup but no direct video, return it
+                if 'hls_backup' in locals():
+                    print(f"🔄 No direct MP4 found, using HLS backup: {hls_backup}")
+                    return hls_backup
+            
+            # If direct resolution fails, return original URL anyway - let download_video handle it
+            print(f"⚠️ Could not resolve Reddit video URL, but returning original to try anyway")
+            return reddit_url
+            
+        except Exception as e:
+            print(f"❌ Error resolving Reddit video URL: {e}")
+            return reddit_url
+
+    def combine_video_audio_with_ffmpeg(self, reddit_url: str) -> str:
+        """Download video and audio separately, then combine with ffmpeg"""
+        try:
+            import subprocess
+            
+            print(f"🎵 ENHANCED audio combination - trying multiple audio detection methods...")
+            
+            # Try to find both video and audio URLs
+            video_url = None
+            audio_url = None
+            
+            # Test different video qualities and audio formats
+            video_formats = ['DASH_720.mp4', 'DASH_480.mp4', 'DASH_360.mp4', 'DASH_240.mp4', 'DASH_96.mp4']
+            audio_formats = ['DASH_audio.mp4', 'audio.mp4', 'DASH_AUDIO_128.mp4', 'DASH_AUDIO_64.mp4']
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'video/*,audio/*,*/*',
+                'Referer': 'https://www.reddit.com/',
+            }
+            
+            # Find video stream
+            print(f"🔍 Searching for video streams...")
+            for video_format in video_formats:
+                test_url = f"{reddit_url.rstrip('/')}/{video_format}"
+                try:
+                    print(f"   Testing: {video_format}")
+                    response = requests.head(test_url, headers=headers, timeout=10)
+                    content_type = response.headers.get('content-type', '').lower()
+                    content_length = response.headers.get('content-length', '0')
+                    
+                    if response.status_code == 200 and ('video/' in content_type or 'mp4' in content_type):
+                        video_url = test_url
+                        print(f"✅ Found video stream: {video_format} ({content_length} bytes)")
+                        break
+                except Exception as e:
+                    print(f"   ❌ Failed: {e}")
+                    continue
+            
+            # Find audio stream - try multiple methods
+            print(f"🔍 Searching for audio streams...")
+            for audio_format in audio_formats:
+                test_url = f"{reddit_url.rstrip('/')}/{audio_format}"
+                try:
+                    print(f"   Testing: {audio_format}")
+                    response = requests.head(test_url, headers=headers, timeout=10)
+                    content_type = response.headers.get('content-type', '').lower()
+                    content_length = response.headers.get('content-length', '0')
+                    
+                    if response.status_code == 200 and int(content_length) > 1000:  # Must have substantial content
+                        audio_url = test_url
+                        print(f"✅ Found audio stream: {audio_format} ({content_length} bytes)")
+                        break
+                except Exception as e:
+                    print(f"   ❌ Failed: {e}")
+                    continue
+            
+            if not video_url:
+                print("❌ No video stream found")
+                return None
+            
+            if not audio_url:
+                print("⚠️ No audio stream found - this video may not have audio")
+                # Still try to download video-only
+                timestamp = int(time.time())
+                print(f"📹 Downloading video-only stream...")
+                video_response = requests.get(video_url, headers=headers, timeout=30, stream=True)
+                video_response.raise_for_status()
+                
+                video_filename = f"reddit_video_only_{timestamp}.mp4"
+                with open(video_filename, 'wb') as f:
+                    for chunk in video_response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                
+                file_size = os.path.getsize(video_filename)
+                print(f"📹 Downloaded video-only: {video_filename} ({file_size} bytes)")
+                return video_filename
+            
+            timestamp = int(time.time())
+            
+            # Download video
+            print(f"📹 Downloading video stream from: {video_url}")
+            video_response = requests.get(video_url, headers=headers, timeout=30, stream=True)
+            video_response.raise_for_status()
+            
+            video_filename = f"reddit_video_temp_{timestamp}.mp4"
+            with open(video_filename, 'wb') as f:
+                for chunk in video_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            video_size = os.path.getsize(video_filename)
+            print(f"✅ Video downloaded: {video_size} bytes")
+            
+            # Download audio
+            print(f"🎵 Downloading audio stream from: {audio_url}")
+            audio_response = requests.get(audio_url, headers=headers, timeout=30, stream=True)
+            audio_response.raise_for_status()
+            
+            audio_filename = f"reddit_audio_temp_{timestamp}.mp4"
+            with open(audio_filename, 'wb') as f:
+                for chunk in audio_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            audio_size = os.path.getsize(audio_filename)
+            print(f"✅ Audio downloaded: {audio_size} bytes")
+            
+            # Combine with ffmpeg
+            output_filename = f"reddit_video_with_audio_{timestamp}.mp4"
+            print(f"🔧 Combining video and audio with ffmpeg...")
+            
+            # Enhanced ffmpeg command with better audio handling
+            ffmpeg_cmd = [
+                'ffmpeg', '-y',  # -y to overwrite output file
+                '-i', video_filename,  # Input video
+                '-i', audio_filename,  # Input audio
+                '-c:v', 'copy',  # Copy video stream (no re-encoding)
+                '-c:a', 'aac',   # Re-encode audio to AAC (Facebook compatible)
+                '-b:a', '128k',  # Set audio bitrate
+                '-ar', '44100',  # Set audio sample rate
+                '-ac', '2',      # Set audio channels to stereo
+                '-shortest',     # End when shortest stream ends
+                '-avoid_negative_ts', 'make_zero',  # Fix timestamp issues
+                output_filename
+            ]
+            
+            print(f"🔧 Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
+            
+            try:
+                result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=60)
+                
+                print(f"🔧 ffmpeg stdout: {result.stdout}")
+                if result.stderr:
+                    print(f"🔧 ffmpeg stderr: {result.stderr}")
+                
+                if result.returncode == 0:
+                    # Clean up temporary files
+                    try:
+                        os.unlink(video_filename)
+                        os.unlink(audio_filename)
+                    except:
+                        pass
+                    
+                    if os.path.exists(output_filename):
+                        file_size = os.path.getsize(output_filename)
+                        print(f"🎵 SUCCESS! Combined video with audio: {output_filename} ({file_size} bytes)")
+                        
+                        # Verify the output has audio
+                        verify_cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a', output_filename]
+                        try:
+                            verify_result = subprocess.run(verify_cmd, capture_output=True, text=True, timeout=10)
+                            if verify_result.returncode == 0 and verify_result.stdout.strip():
+                                print(f"✅ Audio stream verified in output file")
+                            else:
+                                print(f"⚠️ No audio stream detected in output file")
+                        except:
+                            print(f"⚠️ Could not verify audio stream")
+                        
+                        return output_filename
+                    else:
+                        print("❌ ffmpeg output file not found")
+                        return None
+                else:
+                    print(f"❌ ffmpeg failed with return code: {result.returncode}")
+                    print(f"❌ ffmpeg error: {result.stderr}")
+                    # Clean up and return video-only
+                    try:
+                        os.unlink(audio_filename)
+                    except:
+                        pass
+                    print("🔄 Returning video-only file...")
+                    return video_filename
+                    
+            except subprocess.TimeoutExpired:
+                print("❌ ffmpeg timeout")
+                return video_filename
+            except FileNotFoundError:
+                print("⚠️ ffmpeg not found, returning video-only")
+                try:
+                    os.unlink(audio_filename)
+                except:
+                    pass
+                return video_filename
+                
+        except Exception as e:
+            print(f"❌ Error in video/audio combination: {e}")
+            return None
+
+    def download_video_with_yt_dlp(self, video_url: str) -> str:
+        """Download video with audio using yt-dlp (for HLS playlists and complex formats)"""
+        try:
+            import yt_dlp
+            
+            print(f"🎵 Using yt-dlp to download video with audio...")
+            
+            # Create filename
+            timestamp = int(time.time())
+            output_template = f"reddit_video_audio_{timestamp}.%(ext)s"
+            
+            # More flexible yt-dlp options for Reddit videos
+            ydl_opts = {
+                'format': 'best/worst',  # Try best first, fallback to worst if needed
+                'outtmpl': output_template,
+                'quiet': True,  # Reduce noise
+                'no_warnings': True,
+                'extractaudio': False,  # Keep video
+                'merge_output_format': 'mp4',  # Ensure output is mp4
+                'writesubtitles': False,
+                'writeautomaticsub': False,
+                'ignoreerrors': True,  # Continue on errors
+                'no_check_certificate': True,  # Skip SSL verification
+                'prefer_ffmpeg': True,  # Use ffmpeg for processing
+            }
+            
+            # Try multiple format strategies
+            format_strategies = [
+                'best[ext=mp4]/best[ext=webm]/best',  # Prefer mp4, then webm, then any
+                'worst[ext=mp4]/worst[ext=webm]/worst',  # Try lower quality if best fails
+                'best',  # Just get the best available
+                'worst',  # Last resort - get anything
+            ]
+            
+            for i, format_selector in enumerate(format_strategies):
+                try:
+                    print(f"🔄 yt-dlp attempt {i+1}/4 with format: {format_selector}")
+                    
+                    ydl_opts['format'] = format_selector
+                    
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Extract info first to check if video exists
+                        info = ydl.extract_info(video_url, download=False)
+                        if not info:
+                            print(f"⚠️ No video info found for attempt {i+1}")
+                            continue
+                            
+                        print(f"📹 Video found: {info.get('title', 'Unknown')[:50]}...")
+                        
+                        # Download the video
+                        ydl.download([video_url])
+                        
+                        # Find the downloaded file
+                        expected_filename = f"reddit_video_audio_{timestamp}.mp4"
+                        if os.path.exists(expected_filename):
+                            file_size = os.path.getsize(expected_filename)
+                            print(f"🎵 SUCCESS! Downloaded video with audio: {expected_filename} ({file_size} bytes)")
+                            return expected_filename
+                        else:
+                            # Look for any file with our timestamp
+                            for file in os.listdir('.'):
+                                if f"reddit_video_audio_{timestamp}" in file:
+                                    file_size = os.path.getsize(file)
+                                    print(f"🎵 SUCCESS! Downloaded video with audio: {file} ({file_size} bytes)")
+                                    return file
+                            
+                            print(f"❌ Downloaded file not found for attempt {i+1}")
+                            continue
+                        
+                except yt_dlp.DownloadError as e:
+                    print(f"⚠️ yt-dlp attempt {i+1} failed: {e}")
+                    continue
+                except Exception as e:
+                    print(f"⚠️ yt-dlp attempt {i+1} error: {e}")
+                    continue
+            
+            print("❌ All yt-dlp attempts failed")
+            return None
+                    
+        except ImportError:
+            print("⚠️ yt-dlp not available, falling back to original method")
+            return None
+        except Exception as e:
+            print(f"❌ Error with yt-dlp download: {e}")
+            return None
+
+    def download_video(self, video_url: str) -> str:
+        """Download a video from URL and save locally - with ffmpeg audio combination for Reddit"""
+        try:
+            # For Reddit videos, try ffmpeg combination first to get audio
+            if 'v.redd.it' in video_url:
+                print(f"🎵 Reddit video detected - trying ffmpeg audio combination...")
+                
+                # Extract base URL for ffmpeg combination
+                base_url = video_url.split('/DASH_')[0] if '/DASH_' in video_url else video_url.rstrip('/')
+                
+                # Try ffmpeg combination first
+                combined_video = self.combine_video_audio_with_ffmpeg(base_url)
+                if combined_video:
+                    print(f"🎵 SUCCESS! Got Reddit video with audio using ffmpeg")
+                    return combined_video
+                
+                print(f"⚠️ ffmpeg combination failed, trying standard resolution...")
+                
+                # Fallback to standard resolution
+                resolved_url = self.resolve_reddit_video_url(video_url)
+                if resolved_url != video_url:
+                    video_url = resolved_url
+                else:
+                    print(f"⚠️ Could not resolve Reddit video URL, skipping video download")
+                    return None
+            
+            # Check if it's an HLS playlist - use yt-dlp for these
+            if 'HLSPlaylist.m3u8' in video_url or '.m3u8' in video_url:
+                print(f"🎵 HLS playlist detected, using yt-dlp for audio support...")
+                return self.download_video_with_yt_dlp(video_url)
+            
+            # For regular video URLs, use standard download
+            # Add headers to mimic a browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+            
+            print(f"📹 Downloading video from: {video_url[:50]}...")
+            response = requests.get(video_url, headers=headers, timeout=30, stream=True)
+            response.raise_for_status()
+            
+            # Check content type
+            content_type = response.headers.get('content-type', '').lower()
+            
+            # Handle HLS playlists (contains audio but needs special processing)
+            if 'application/x-mpegurl' in content_type or 'application/vnd.apple.mpegurl' in content_type:
+                print(f"🎵 Found HLS playlist with audio, using yt-dlp...")
+                return self.download_video_with_yt_dlp(video_url)
+            
+            # Check for valid video content types
+            if not any(vid_type in content_type for vid_type in ['video/', 'mp4', 'webm', 'mov', 'avi']):
+                print(f"⚠️ Invalid video content type: {content_type}")
+                return None
+            
+            # Check content length
+            content_length = int(response.headers.get('content-length', 0))
+            if content_length > 100 * 1024 * 1024:  # 100MB limit
+                print(f"⚠️ Video too large: {content_length} bytes")
+                return None
+            
+            # Determine file extension from content type or URL
+            if 'mp4' in content_type or video_url.lower().endswith('.mp4'):
+                ext = '.mp4'
+            elif 'webm' in content_type or video_url.lower().endswith('.webm'):
+                ext = '.webm'
+            elif 'mov' in content_type or video_url.lower().endswith('.mov'):
+                ext = '.mov'
+            elif 'avi' in content_type or video_url.lower().endswith('.avi'):
+                ext = '.avi'
+            else:
+                ext = '.mp4'  # Default
+            
+            # Create filename
+            timestamp = int(time.time())
+            filename = f"reddit_video_{timestamp}{ext}"
+            
+            # Save video
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            file_size = os.path.getsize(filename)
+            print(f"📹 Downloaded video: {filename} ({file_size} bytes)")
+            return filename
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Network error downloading video: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Error downloading video: {e}")
+            return None
+    
     def download_image(self, image_url: str) -> str:
         """Download an image from URL and save locally"""
         try:
-            # Handle Reddit video URLs by trying to get preview image instead
-            if 'v.redd.it' in image_url:
-                print(f"⚠️ Reddit video URL detected, skipping: {image_url}")
+            # Skip Reddit gallery URLs - they don't contain direct images
+            if 'reddit.com/gallery/' in image_url:
+                print(f"⚠️ Reddit gallery URL detected, skipping: {image_url[:50]}...")
+                return None
+            
+            # Skip other non-direct image URLs
+            skip_patterns = [
+                'reddit.com/r/',
+                'reddit.com/user/',
+                'reddit.com/comments/'
+            ]
+            
+            # Skip redd.it URLs that don't have image extensions
+            if 'redd.it' in image_url and not any(ext in image_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                print(f"⚠️ Non-direct redd.it URL detected, skipping: {image_url[:50]}...")
+                return None
+            
+            # Skip other non-direct URLs
+            if any(skip_pattern in image_url for skip_pattern in skip_patterns):
+                print(f"⚠️ Non-direct image URL detected, skipping: {image_url[:50]}...")
                 return None
             
             # Add headers to mimic a browser request
@@ -252,36 +903,172 @@ class FacebookService:
             print(f"❌ Error generating image with Meta AI: {e}")
             return None
     
-    def smart_post(self, message: str, image_url: str = None, article_title: str = "", article_description: str = "") -> Dict[str, Any]:
-        """Post content with news image, AI-generated image, or text-only"""
+    def smart_post(self, message: str, media_url: str = None, article_title: str = "", article_description: str = "", preview_images: list = None) -> Dict[str, Any]:
+        """AGGRESSIVELY get videos/images - prioritize actual media over fallbacks"""
         try:
-            image_path = None
+            media_path = None
+            is_video = False
             
-            if image_url:
-                # Try to download image from news article
-                print(f"📥 Downloading image from news article...")
-                image_path = self.download_image(image_url)
-                
-            if not image_path and (article_title or article_description):
-                # Generate image using Meta AI if no news image available
-                print("🎨 No news image available, generating AI image...")
-                image_path = self.generate_image_with_ai(article_title, article_description)
+            print(f"🎯 AGGRESSIVE MEDIA EXTRACTION MODE - Videos and images MUST be posted!")
             
-            if image_path:
-                # Post with image (either downloaded or AI-generated)
-                print("📤 Posting to Facebook with image...")
-                response = self.post_image(image_path, message)
+            # STEP 1: Try main media URL aggressively
+            if media_url:
+                if self.is_video_url(media_url):
+                    print(f"📹 VIDEO DETECTED - MUST GET THIS VIDEO!")
+                    print(f"🔍 Trying multiple methods to get video from: {media_url[:50]}...")
+                    
+                    # Try multiple times with different approaches
+                    for attempt in range(3):
+                        print(f"🔄 Video download attempt {attempt + 1}/3")
+                        media_path = self.download_video(media_url)
+                        if media_path:
+                            is_video = True
+                            print(f"✅ SUCCESS! Got video on attempt {attempt + 1}")
+                            break
+                        else:
+                            print(f"⚠️ Video attempt {attempt + 1} failed, trying again...")
+                            time.sleep(1)  # Brief pause between attempts
+                    
+                    # If video still failed, try preview images as video fallback
+                    if not media_path and preview_images:
+                        print(f"🎬 Video failed after 3 attempts, trying preview images as backup...")
+                        for i, preview in enumerate(preview_images):
+                            preview_url = preview.get('url')
+                            if preview_url:
+                                print(f"📥 Trying preview image {i+1}: {preview_url[:50]}...")
+                                media_path = self.download_image(preview_url)
+                                if media_path:
+                                    is_video = False
+                                    print(f"✅ Got preview image {i+1} as video fallback")
+                                    break
                 
-                # Clean up the image
+                else:
+                    print(f"📷 IMAGE DETECTED - MUST GET THIS IMAGE!")
+                    
+                    # Handle Reddit gallery URLs - go straight to preview images
+                    if 'reddit.com/gallery/' in media_url:
+                        print(f"🖼️ Reddit gallery detected - going straight to preview images!")
+                        print(f"🔍 Debug: preview_images available: {len(preview_images) if preview_images else 0}")
+                        
+                        if preview_images:
+                            print(f"📷 AGGRESSIVELY trying ALL {len(preview_images)} preview images...")
+                            for i, preview in enumerate(preview_images):
+                                preview_url = preview.get('url')
+                                print(f"🔍 Preview {i+1}: {preview_url[:50] if preview_url else 'No URL'}")
+                                
+                                if preview_url:
+                                    # Try multiple times for each preview image
+                                    for attempt in range(2):
+                                        print(f"📥 Trying preview image {i+1}/{len(preview_images)} (attempt {attempt+1}/2)")
+                                        media_path = self.download_image(preview_url)
+                                        if media_path:
+                                            print(f"✅ SUCCESS! Got preview image {i+1} on attempt {attempt+1}")
+                                            break
+                                        time.sleep(0.5)
+                                    
+                                    if media_path:
+                                        break
+                        else:
+                            print(f"❌ No preview images available for gallery URL!")
+                    
+                    else:
+                        # Try main image URL aggressively
+                        print(f"🔍 Trying multiple methods to get image from: {media_url[:50]}...")
+                        for attempt in range(3):
+                            print(f"🔄 Image download attempt {attempt + 1}/3")
+                            media_path = self.download_image(media_url)
+                            if media_path:
+                                print(f"✅ SUCCESS! Got image on attempt {attempt + 1}")
+                                break
+                            else:
+                                print(f"⚠️ Image attempt {attempt + 1} failed, trying again...")
+                                time.sleep(1)
+                        
+                        # If main image failed, try preview images
+                        if not media_path and preview_images:
+                            print(f"📷 Main image failed, trying ALL preview images...")
+                            for i, preview in enumerate(preview_images):
+                                preview_url = preview.get('url')
+                                if preview_url:
+                                    print(f"📥 Trying preview image {i+1}/{len(preview_images)}: {preview_url[:50]}...")
+                                    media_path = self.download_image(preview_url)
+                                    if media_path:
+                                        print(f"✅ Got preview image {i+1}")
+                                        break
+                    
+                    is_video = False
+            
+            # STEP 2: If no main URL, try ALL preview images aggressively
+            if not media_path and preview_images:
+                print(f"🖼️ No main media URL, AGGRESSIVELY trying ALL {len(preview_images)} preview images...")
+                for i, preview in enumerate(preview_images):
+                    preview_url = preview.get('url')
+                    if preview_url:
+                        print(f"📥 Trying preview image {i+1}/{len(preview_images)}: {preview_url[:50]}...")
+                        media_path = self.download_image(preview_url)
+                        if media_path:
+                            is_video = False
+                            print(f"✅ Got preview image {i+1}")
+                            break
+            
+            # STEP 3: Only if we absolutely cannot get any media, try AI generation
+            if not media_path and (article_title or article_description):
+                print("🎨 LAST RESORT: No media found anywhere, generating AI image...")
+                media_path = self.generate_image_with_ai(article_title, article_description)
+                is_video = False
+            
+            # STEP 4: Post the media we got (prioritize actual media over text-only)
+            if media_path:
+                if is_video:
+                    print("📹 POSTING VIDEO TO FACEBOOK!")
+                    response = self.post_video(media_path, message)
+                else:
+                    print("📤 POSTING IMAGE TO FACEBOOK!")
+                    response = self.post_image(media_path, message)
+                
+                # Clean up the media file
                 try:
-                    os.unlink(image_path)
-                    print("🗑️ Cleaned up temporary image")
+                    os.unlink(media_path)
+                    media_type = "video" if is_video else "image"
+                    print(f"🗑️ Cleaned up temporary {media_type}")
                 except OSError:
                     pass
             else:
-                # Fallback to text-only post
-                print("📤 No image available, posting text-only to Facebook...")
+                # Only fallback to text if we absolutely couldn't get any media
+                print("📤 FALLBACK: No media available anywhere, posting text-only...")
                 response = self.post_text(message)
+            
+            # STEP 5: Auto-comment with follow/subscribe message if post was successful
+            if response and response.get('id'):
+                post_id = response.get('id')
+                print(f"🎯 Post successful! Post ID: {post_id}")
+                print(f"📝 Starting automatic follow comment process...")
+                
+                # Determine post type for contextual comment
+                post_type = "general"
+                if any(keyword in message.lower() for keyword in ['paranormal', 'ghost', 'ufo', 'alien', 'supernatural', 'mystery', 'strange', 'unexplained']):
+                    post_type = "paranormal"
+                    print(f"🔮 Detected post type: PARANORMAL content")
+                elif any(keyword in message.lower() for keyword in ['reddit', 'community', 'discussion', 'story', 'experience']):
+                    post_type = "reddit"
+                    print(f"👥 Detected post type: REDDIT/COMMUNITY content")
+                elif any(keyword in message.lower() for keyword in ['news', 'breaking', 'update', 'politics', 'congress', 'bangladesh', 'pakistan']):
+                    post_type = "news"
+                    print(f"📰 Detected post type: NEWS content")
+                else:
+                    print(f"📄 Detected post type: GENERAL content")
+                
+                print(f"⏰ Waiting 3 seconds before adding follow comment...")
+                time.sleep(3)
+                
+                print(f"🚀 Now attempting to add follow comment to post {post_id}...")
+                
+                # Add the follow comment
+                comment_success = self.auto_comment_on_post(post_id, message, post_type)
+                if comment_success:
+                    print("🌟 ✅ Follow comment process completed successfully!")
+                else:
+                    print("⚠️ Follow comment failed, but main post was successful")
             
             print("✅ Successfully posted to Facebook!")
             return response
@@ -290,6 +1077,177 @@ class FacebookService:
             print(f"❌ Error in smart_post: {e}")
             raise
     
+    def post_comment_on_post(self, post_id: str, comment_text: str) -> Dict[str, Any]:
+        """Post a comment on a specific Facebook post"""
+        url = f"{self.base_url}/{post_id}/comments"
+        
+        params = {
+            'message': comment_text,
+            'access_token': self.page_token
+        }
+        
+        try:
+            print(f"💬 Adding comment to post {post_id}...")
+            response = requests.post(url, params=params)
+            
+            # Check for specific Facebook API errors
+            if response.status_code == 400:
+                try:
+                    error_data = response.json()
+                    error_message = error_data.get('error', {}).get('message', 'Unknown error')
+                    print(f"❌ Facebook Comment API Error: {error_message}")
+                    return None
+                except:
+                    print("❌ Failed to parse Facebook comment error response")
+                    return None
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get('id'):
+                print(f"✅ Comment posted successfully! Comment ID: {result.get('id')}")
+            
+            return result
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error posting comment: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Unexpected error posting comment: {e}")
+            return None
+
+    def generate_follow_comment(self, post_content: str, post_type: str = "general") -> str:
+        """Generate a contextual follow/subscribe comment using AI based on the post content"""
+        
+        # Page URL
+        page_url = "https://www.facebook.com/people/Beyond-Belief-Daily/61581236679472/"
+        
+        try:
+            # Check if AI is available
+            if not self.ai:
+                print("⚠️ Meta AI not available for comment generation, using fallback")
+                return self._get_fallback_follow_comment(page_url, post_type)
+            
+            # Create AI prompt for generating follow comment
+            prompt = f"""Create a short, engaging Facebook comment to encourage people to follow our page "Beyond Belief Daily".
+
+Post content: {post_content[:200]}...
+
+Requirements:
+- Keep it under 300 characters total
+- Be friendly and engaging
+- Encourage following our page for more similar content
+- Include relevant emojis (but not too many)
+- End with our page link: {page_url}
+- Make it feel natural and contextual to the post
+- Don't use quotes around the comment
+
+Example style: "Love this type of content? Follow Beyond Belief Daily for more fascinating stories every day! 🌟 [page_url]"
+
+Generate a unique comment now:"""
+
+            print("🤖 Generating AI follow comment...")
+            
+            # Add small delay before AI call
+            time.sleep(1)
+            
+            # Generate comment using Meta AI
+            response = self.ai.prompt(message=prompt)
+            
+            # Extract the generated comment
+            generated_comment = response.get('message', '') if isinstance(response, dict) else str(response)
+            
+            # Clean up the generated comment (remove any unwanted quotes)
+            if hasattr(self, '_clean_generated_content'):
+                # Use the same cleaning function from content generator if available
+                cleaned_comment = generated_comment.strip()
+                # Remove quotes that wrap the entire comment
+                if (cleaned_comment.startswith('"') and cleaned_comment.endswith('"')) or \
+                   (cleaned_comment.startswith("'") and cleaned_comment.endswith("'")):
+                    cleaned_comment = cleaned_comment[1:-1].strip()
+            else:
+                cleaned_comment = generated_comment.strip()
+            
+            # Ensure the comment is under Facebook's limit
+            if len(cleaned_comment) > 400:
+                print(f"⚠️ AI comment too long ({len(cleaned_comment)} chars), truncating...")
+                cleaned_comment = cleaned_comment[:397] + "..."
+            
+            # Ensure the page URL is included
+            if page_url not in cleaned_comment:
+                if len(cleaned_comment) + len(page_url) + 5 <= 400:
+                    cleaned_comment += f"\n\n{page_url}"
+                else:
+                    # Truncate more to fit the URL
+                    max_text_length = 400 - len(page_url) - 5
+                    cleaned_comment = cleaned_comment[:max_text_length-3] + f"...\n\n{page_url}"
+            
+            print(f"✅ AI generated follow comment ({len(cleaned_comment)} chars)")
+            return cleaned_comment
+            
+        except Exception as e:
+            print(f"⚠️ Error generating AI comment: {e}")
+            print("🔄 Using fallback comment...")
+            return self._get_fallback_follow_comment(page_url, post_type)
+
+    def _get_fallback_follow_comment(self, page_url: str, post_type: str = "general") -> str:
+        """Get a simple fallback follow comment if AI generation fails"""
+        fallback_comments = [
+            f"🌟 Follow Beyond Belief Daily for more interesting content every day!\n\n{page_url}",
+            f"📱 Want more fascinating stories? Follow us for daily updates!\n\n{page_url}",
+            f"✨ Enjoying our content? Follow Beyond Belief Daily for more!\n\n{page_url}",
+            f"🔥 Follow us for more amazing content like this!\n\n{page_url}"
+        ]
+        
+        import random
+        return random.choice(fallback_comments)
+
+    def auto_comment_on_post(self, post_id: str, post_content: str, post_type: str = "general") -> bool:
+        """Automatically add a follow/subscribe comment to a post with robust error handling"""
+        try:
+            print("🤖 Attempting to add AI-generated follow comment...")
+            print(f"📝 Post type detected: {post_type.upper()}")
+            
+            # Generate contextual comment using AI
+            print("🧠 Generating AI comment based on post content...")
+            comment_text = self.generate_follow_comment(post_content, post_type)
+            
+            if not comment_text or len(comment_text.strip()) == 0:
+                print("⚠️ No comment text generated, skipping comment")
+                return False
+            
+            # Show what comment will be posted
+            print(f"📝 Generated comment ({len(comment_text)} chars):")
+            print(f"💬 Comment preview: {comment_text[:100]}{'...' if len(comment_text) > 100 else ''}")
+            print(f"📄 Full comment text:")
+            print(f"   {comment_text}")
+            
+            # Add a small delay before commenting (to seem more natural)
+            print("⏳ Waiting 3 seconds before posting comment...")
+            time.sleep(3)
+            
+            print(f"🚀 Now posting comment to Facebook post {post_id}...")
+            
+            # Post the comment with additional error handling
+            comment_result = self.post_comment_on_post(post_id, comment_text)
+            
+            if comment_result and comment_result.get('id'):
+                comment_id = comment_result.get('id')
+                print(f"✅ AI-generated follow comment added successfully!")
+                print(f"🎯 Comment ID: {comment_id}")
+                print(f"📊 Comment stats: {len(comment_text)} characters posted")
+                return True
+            else:
+                print("⚠️ Failed to add follow comment, but main post was successful")
+                print("ℹ️ This doesn't affect the main post - it was posted successfully")
+                return False
+                
+        except Exception as e:
+            print(f"⚠️ Error in auto_comment_on_post: {e}")
+            print("ℹ️ Comment failed but main post remains successful - continuing normally")
+            print("🔄 The automation will continue with the next post")
+            return False
+
     def get_page_info(self) -> Dict[str, Any]:
         """Get information about the Facebook page"""
         url = f"{self.base_url}/{self.page_id}"

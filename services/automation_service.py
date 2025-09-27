@@ -47,7 +47,10 @@ class NewsAutomationService:
         # User preferences (will be set during setup)
         self.preferences = None
         
-        # Alternating posting state (True = News, False = Reddit)
+        # Content mode: 'mixed', 'reddit_only', 'news_only'
+        self.content_mode = 'mixed'
+        
+        # Alternating posting state (True = News, False = Reddit) - only used in mixed mode
         self.post_news_next = True
         
         # Statistics
@@ -66,6 +69,22 @@ class NewsAutomationService:
             'db_folder_created': True
         })
     
+    def set_content_mode(self, mode: str):
+        """Set the content mode for the automation service"""
+        valid_modes = ['mixed', 'reddit_only', 'news_only']
+        if mode not in valid_modes:
+            raise ValueError(f"Invalid content mode: {mode}. Must be one of {valid_modes}")
+        
+        self.content_mode = mode
+        print(f"📊 Content mode set to: {mode.upper()}")
+        
+        if mode == 'reddit_only':
+            print("👻 Will only post paranormal content from Reddit subreddits")
+        elif mode == 'news_only':
+            print("📰 Will only post traditional news articles")
+        else:
+            print("🔄 Will alternate between news and Reddit content")
+
     def setup_preferences(self):
         """Setup user preferences for news fetching"""
         if not self.preferences:
@@ -166,42 +185,72 @@ class NewsAutomationService:
         return None
     
     def create_and_post_content(self):
-        """Main function to create and post content - alternates between news and Reddit"""
+        """Main function to create and post content - respects content mode settings"""
+        # Track execution start time
+        execution_start_time = datetime.now()
+        
+        # Determine post type based on content mode
+        if self.content_mode == 'reddit_only':
+            post_type = 'reddit'
+        elif self.content_mode == 'news_only':
+            post_type = 'news'
+        else:  # mixed mode
+            post_type = 'news' if self.post_news_next else 'reddit'
+        
         self.logger.log_step("CREATE_AND_POST_START", {
-            'timestamp': datetime.now().isoformat(),
-            'post_type': 'news' if self.post_news_next else 'reddit'
+            'timestamp': execution_start_time.isoformat(),
+            'content_mode': self.content_mode,
+            'post_type': post_type
         })
         
         try:
-            print(f"\n🚀 Starting content creation and posting at {datetime.now()}")
+            print(f"\n🚀 Starting content creation and posting at {execution_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"📊 Content Mode: {self.content_mode.upper()}")
             
-            # Determine what type of content to post
-            if self.post_news_next:
+            # Post content based on determined type
+            if post_type == 'news':
                 print("📰 Posting NEWS content this round")
                 success = self._post_news_content()
                 if success:
                     self.stats['news_posts'] += 1
-            else:
+            else:  # reddit
                 print("👻 Posting REDDIT content this round")
                 success = self._post_reddit_content()
                 if success:
                     self.stats['reddit_posts'] += 1
             
             if success:
-                # Toggle for next post
-                self.post_news_next = not self.post_news_next
-                next_type = "NEWS" if self.post_news_next else "REDDIT"
-                print(f"🔄 Next post will be: {next_type}")
+                # Only toggle in mixed mode
+                if self.content_mode == 'mixed':
+                    self.post_news_next = not self.post_news_next
+                    next_type = "NEWS" if self.post_news_next else "REDDIT"
+                    print(f"🔄 Next post will be: {next_type}")
+                else:
+                    # In single-mode, always post the same type
+                    mode_type = "NEWS" if self.content_mode == 'news_only' else "REDDIT"
+                    print(f"🔄 Next post will be: {mode_type} (same mode)")
                 
                 self.stats['total_posts'] += 1
                 self.stats['successful_posts'] += 1
                 
                 print(f"📊 Stats: {self.stats['successful_posts']}/{self.stats['total_posts']} successful posts")
                 print(f"📊 News: {self.stats['news_posts']} | Reddit: {self.stats['reddit_posts']}")
+                
+                # Show next execution time if running in scheduled mode
+                if schedule.jobs:
+                    next_run = schedule.next_run()
+                    if next_run:
+                        print(f"🕐 Next execution will start at: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
             else:
                 self.stats['total_posts'] += 1
                 self.stats['failed_posts'] += 1
                 print("❌ Post failed - will retry same type next time")
+                
+                # Show next execution time even on failure
+                if schedule.jobs:
+                    next_run = schedule.next_run()
+                    if next_run:
+                        print(f"🕐 Next execution will start at: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
             
         except Exception as e:
             error_msg = str(e)
@@ -209,11 +258,30 @@ class NewsAutomationService:
             
             self.logger.log_error("CREATE_AND_POST_ERROR", error_msg, {
                 'total_posts': self.stats['total_posts'],
-                'failed_posts': self.stats['failed_posts']
+                'failed_posts': self.stats['failed_posts'],
+                'content_mode': self.content_mode
             })
             
             self.stats['total_posts'] += 1
             self.stats['failed_posts'] += 1
+        
+        finally:
+            # Calculate and display execution time
+            execution_end_time = datetime.now()
+            execution_duration = execution_end_time - execution_start_time
+            
+            # Convert to human-readable format
+            total_seconds = int(execution_duration.total_seconds())
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            
+            if minutes > 0:
+                duration_str = f"{minutes}m {seconds}s"
+            else:
+                duration_str = f"{seconds}s"
+            
+            print(f"⏱️ Execution completed in: {duration_str}")
+            print(f"🏁 Finished at: {execution_end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def _post_news_content(self) -> bool:
         """Post news content to Facebook"""
@@ -237,7 +305,10 @@ class NewsAutomationService:
             # Generate content
             facebook_content = self.content_generator.generate_content_from_news(article, "facebook")
             
-            if not facebook_content:
+            if facebook_content is None:
+                print("🚫 Content rejected by LLM due to guidelines - skipping this article")
+                return False
+            elif not facebook_content:
                 print("❌ Failed to generate news content")
                 return False
             
@@ -299,33 +370,25 @@ class NewsAutomationService:
             # Generate content from Reddit post
             facebook_content = self.content_generator.generate_content_from_reddit(reddit_post, "facebook")
             
-            if not facebook_content:
+            if facebook_content is None:
+                print("🚫 Reddit content rejected by LLM due to guidelines - skipping this post")
+                return False
+            elif not facebook_content:
                 print("❌ Failed to generate Reddit content")
                 return False
             
-            # Get image URL from Reddit post - prefer preview images for videos
-            image_url = reddit_post.get('image_url')
+            # Get media URL from Reddit post (could be video or image)
+            media_url = reddit_post.get('image_url')
+            preview_images = reddit_post.get('preview_images', [])
             
-            # If it's a video URL, try to use preview images instead
-            if image_url and 'v.redd.it' in image_url:
-                preview_images = reddit_post.get('preview_images', [])
-                if preview_images:
-                    # Find the largest preview image
-                    largest_preview = max(preview_images, 
-                                        key=lambda x: (x.get('width', 0) * x.get('height', 0)))
-                    image_url = largest_preview.get('url')
-                    print(f"🎬 Using preview image instead of video: {image_url[:50]}...")
-                else:
-                    print("🎬 Video post with no preview images, posting text-only")
-                    image_url = None
-            
-            # Post to Facebook
+            # Post to Facebook with proper video/image detection
             print("📤 Posting Reddit content to Facebook...")
             facebook_response = self.facebook_service.smart_post(
                 facebook_content, 
-                image_url, 
+                media_url, 
                 reddit_post.get('title', ''), 
-                reddit_post.get('selftext', '')[:200] if reddit_post.get('selftext') else ''
+                reddit_post.get('selftext', '')[:200] if reddit_post.get('selftext') else '',
+                preview_images
             )
             
             if facebook_response and facebook_response.get('id'):
@@ -418,12 +481,23 @@ class NewsAutomationService:
         print("🚀 Running first post...")
         self.create_and_post_content()
         
-        print(f"⏰ Scheduler started. Posting every {interval_minutes} minutes. Press Ctrl+C to stop.")
+        # Calculate and display next execution time
+        next_execution = datetime.now() + timedelta(minutes=interval_minutes)
+        print(f"⏰ Scheduler started. Posting every {interval_minutes} minutes.")
+        print(f"🕐 Next execution will start at: {next_execution.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("Press Ctrl+C to stop.")
         
         # Keep the scheduler running
         try:
             while True:
                 schedule.run_pending()
+                
+                # Show next execution time every cycle
+                if schedule.jobs:
+                    next_run = schedule.next_run()
+                    if next_run:
+                        print(f"🕐 Next execution scheduled for: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+                
                 time.sleep(60)  # Check every minute
         except KeyboardInterrupt:
             print("\n🛑 Automation stopped by user")

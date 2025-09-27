@@ -2,6 +2,7 @@ import praw
 import os
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
+from constants import reddit_subs
 
 # Load environment variables
 load_dotenv()
@@ -182,14 +183,32 @@ class RedditService:
         """
         Get top posts from a list of paranormal subs.
         Returns dictionary keyed by subreddit name.
+        Enhanced with video-rich paranormal subreddits.
         """
+        import time
+        
         if subs is None:
-            subs = ["paranormal", "HighStrangeness", "ghosts", "UFOs", "aliens", "cryptids", "truecreepy", "Glitch_in_the_Matrix", "nosleep", "LetsNotMeet"]
+            # Enhanced list with more video-rich paranormal subreddits
+            subs = reddit_subs
 
         trending = {}
-        for sub in subs:
-            print(f"Fetching posts from r/{sub}...")
-            trending[sub] = self.get_top_posts(subreddit_name=sub, limit=limit, time_filter=time_filter)
+        for i, sub in enumerate(subs):
+            try:
+                print(f"Fetching posts from r/{sub}...")
+                trending[sub] = self.get_top_posts(subreddit_name=sub, limit=limit, time_filter=time_filter)
+                
+                # Add 5-second delay between requests to prevent rate limiting
+                if i < len(subs) - 1:  # Don't delay after the last request
+                    from datetime import datetime, timedelta
+                    next_request_time = datetime.now() + timedelta(seconds=5)
+                    print(f"⏳ Waiting 5 seconds before next request...")
+                    print(f"🕐 Next request will start at: {next_request_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    time.sleep(5)
+                    
+            except Exception as e:
+                print(f"⚠️ Error fetching from r/{sub}: {e}")
+                # Continue with other subreddits even if one fails
+                continue
         return trending
 
     def search_posts(self, query: str, subreddit_name: str = None, limit: int = 10, sort: str = "relevance") -> List[Dict]:
