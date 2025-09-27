@@ -22,76 +22,62 @@ class ContentGenerator:
             print(f"⚠️ Reddit service not available in ContentGenerator: {e}")
             self.reddit_service = None
         
-        # Content templates for variety - concise Facebook posts with critical analysis
+        # Content templates for variety - engaging Facebook posts with critical analysis
         self.templates = [
-            """Create a concise Facebook post about this news: {title}
-
-IMPORTANT: Keep it under 800 characters total.
+            """Create an engaging Facebook post about this news: {title}
 
 Format:
-🔥 Brief headline with emoji
-📰 2 sentences max explaining key points
-🤔 Critical analysis (1-2 sentences):
-- Congress news: Critique their approach
-- Bangladesh/Pakistan: Constructive criticism
-💭 One engaging question
-#hashtags (max 3)
+🔥 Compelling headline with emoji
+📰 Detailed explanation of key points and context
+🤔 Critical analysis and commentary
+💭 Thought-provoking question to encourage discussion
+#hashtags (2-3 relevant ones)
 
-Keep it punchy and engaging!""",
+Make it informative, engaging, and shareable!""",
 
-            """Write a short Facebook post for: {title}
-
-LIMIT: 800 characters maximum.
+            """Write a comprehensive Facebook post for: {title}
 
 Structure:
-🚨 Catchy opener
-📝 Brief summary (1-2 sentences)
-🔍 Quick critical take:
-- Congress: Point out policy issues
-- Bangladesh/Pakistan: Critique situation
-🤔 Engaging question
+🚨 Attention-grabbing opener
+📝 Thorough summary with important details
+🔍 In-depth critical analysis
+🤔 Engaging question for audience interaction
 #hashtags
 
-Make every word count!""",
+Create content that informs and sparks meaningful discussion!""",
 
-            """Transform this into a concise Facebook post: {title}
-
-MAX LENGTH: 800 characters.
+            """Transform this into a detailed Facebook post: {title}
 
 Format:
-- Relevant emoji + headline
-- Key points (2 sentences max)
-- Critical analysis (1 sentence)
-- Question for engagement
-- 2-3 hashtags
+- Relevant emoji + compelling headline
+- Comprehensive explanation of key points
+- Thoughtful critical analysis
+- Question that encourages engagement and sharing
+- 2-3 strategic hashtags
 
-Be direct and impactful!""",
+Be informative, analytical, and engaging!""",
 
-            """Create a short, engaging Facebook post: {title}
-
-STRICT LIMIT: 800 characters.
+            """Create a thorough, engaging Facebook post: {title}
 
 Include:
-🔥 Eye-catching start
-📰 Essential details only
-🤔 Critical perspective (brief)
-💭 One question
+🔥 Eye-catching start with context
+📰 Complete coverage of essential details
+🤔 Insightful critical perspective
+💭 Discussion-driving question
 #hashtags
 
-Quality over quantity!""",
+Focus on creating valuable, shareable content!""",
 
-            """Write a punchy Facebook post for: {title}
-
-MAXIMUM: 800 characters total.
+            """Write an informative Facebook post for: {title}
 
 Structure:
-- Emoji + headline
-- Core message (concise)
-- Critical angle (short)
+- Emoji + compelling headline
+- Detailed core message with context
+- Analytical commentary
 - Engagement question
-- Hashtags
+- Relevant hashtags
 
-Make it memorable and shareable!"""
+Make it comprehensive, thought-provoking, and shareable!"""
         ]
         
         # Hashtag categories
@@ -114,21 +100,111 @@ Make it memorable and shareable!"""
         # Remove quotes that wrap the entire content
         content = content.strip()
         
-        # Remove leading and trailing quotes if they wrap the entire content
+        # Enhanced quote removal - handle multiple patterns
+        import re
+        
+        # Pattern 1: Remove quotes that wrap the entire content (most common issue)
         if (content.startswith('"') and content.endswith('"')) or \
            (content.startswith("'") and content.endswith("'")):
             content = content[1:-1].strip()
+            print(f"🧹 Removed wrapping quotes from content")
         
-        # Remove quotes around specific patterns like "FACEBOOK POST" or "TWITTER POST"
-        import re
+        # Pattern 2: Remove quotes around the entire content with potential trailing characters
+        content = re.sub(r'^"([^"]+)"[\s¹²³⁴⁵⁶⁷⁸⁹⁰]*$', r'\1', content, flags=re.DOTALL)
+        content = re.sub(r"^'([^']+)'[\s¹²³⁴⁵⁶⁷⁸⁹⁰]*$", r'\1', content, flags=re.DOTALL)
+        
+        # Pattern 3: Remove quotes around specific patterns like "FACEBOOK POST" or "TWITTER POST"
         content = re.sub(r'^"([^"]+)"$', r'\1', content)
         content = re.sub(r"^'([^']+)'$", r'\1', content)
         
-        # Remove any remaining unwanted quote patterns
-        content = re.sub(r'"([A-Z\s]+)"', r'\1', content)  # Remove quotes around ALL CAPS text
-        content = re.sub(r"'([A-Z\s]+)'", r'\1', content)  # Remove quotes around ALL CAPS text
+        # Pattern 4: Remove quotes around ALL CAPS text
+        content = re.sub(r'"([A-Z\s]+)"', r'\1', content)
+        content = re.sub(r"'([A-Z\s]+)'", r'\1', content)
+        
+        # Pattern 5: Remove quotes around multi-line content (like the example you showed)
+        content = re.sub(r'^"(.*)"[\s¹²³⁴⁵⁶⁷⁸⁹⁰]*$', r'\1', content, flags=re.DOTALL)
+        content = re.sub(r"^'(.*)'[\s¹²³⁴⁵⁶⁷⁸⁹⁰]*$", r'\1', content, flags=re.DOTALL)
+        
+        # Pattern 6: Handle quotes with trailing superscript numbers (like ¹ in your example)
+        content = re.sub(r'^"([^"]*)"[\s¹²³⁴⁵⁶⁷⁸⁹⁰]+$', r'\1', content, flags=re.DOTALL)
+        content = re.sub(r"^'([^']*)'[\s¹²³⁴⁵⁶⁷⁸⁹⁰]+$", r'\1', content, flags=re.DOTALL)
+        
+        # Final cleanup
+        content = content.strip()
+        
+        # Remove any remaining trailing superscript numbers or special characters
+        content = re.sub(r'[\s¹²³⁴⁵⁶⁷⁸⁹⁰]+$', '', content)
         
         return content.strip()
+
+    def _check_if_content_rejected(self, content: str, article_title: str) -> bool:
+        """Check if LLM rejected content generation due to guidelines"""
+        if not content:
+            return True
+        
+        content_lower = content.lower().strip()
+        
+        # Check for explicit "REJECT" response first (highest priority)
+        if content_lower == "reject" or content.strip().upper() == "REJECT":
+            print(f"🚫 LLM EXPLICIT REJECTION DETECTED")
+            print(f"📰 Article Title: {article_title[:100]}...")
+            print(f"🤖 LLM Response: {content}")
+            print(f"⚠️ Rejection Reason: Explicit 'REJECT' response")
+            print(f"🔄 SKIPPING THIS POST - Moving to next article")
+            print(f"=" * 60)
+            return True
+        
+        # Check for rejection keywords/phrases
+        rejection_indicators = [
+            "i can't",
+            "i cannot",
+            "i'm not able",
+            "i'm unable",
+            "rejected",
+            "refuse to",
+            "not appropriate",
+            "against guidelines",
+            "policy violation",
+            "content policy",
+            "community guidelines",
+            "inappropriate content",
+            "sensitive topic",
+            "harmful content",
+            "offensive content",
+            "violates",
+            "not allowed",
+            "restricted",
+            "prohibited",
+            "can't create",
+            "cannot create",
+            "unable to create",
+            "sorry, i can't",
+            "i apologize, but",
+            "i'm sorry, but"
+        ]
+        
+        # Check if content contains rejection indicators
+        for indicator in rejection_indicators:
+            if indicator in content_lower:
+                print(f"🚫 LLM CONTENT REJECTION DETECTED")
+                print(f"📰 Article Title: {article_title[:100]}...")
+                print(f"🤖 LLM Response: {content[:200]}...")
+                print(f"⚠️ Rejection Reason: Contains '{indicator}'")
+                print(f"🔄 SKIPPING THIS POST - Moving to next article")
+                print(f"=" * 60)
+                return True
+        
+        # Check if content is too short (likely a rejection)
+        if len(content.strip()) < 20:
+            print(f"🚫 LLM CONTENT REJECTION DETECTED")
+            print(f"📰 Article Title: {article_title[:100]}...")
+            print(f"🤖 LLM Response: {content}")
+            print(f"⚠️ Rejection Reason: Content too short (likely rejected)")
+            print(f"🔄 SKIPPING THIS POST - Moving to next article")
+            print(f"=" * 60)
+            return True
+        
+        return False
 
     def generate_content_from_news(self, article: Dict[str, Any], platform: str = "facebook") -> str:
         """Generate unique content from a news article using Meta AI for specific platform"""
@@ -145,7 +221,7 @@ Make it memorable and shareable!"""
                 platform_name = "Twitter"
             else:
                 template = random.choice(self.templates)
-                char_limit = 800
+                char_limit = 63000  # Use Facebook's maximum character limit (63,206)
                 platform_name = "Facebook"
             
             # Create the prompt
@@ -161,13 +237,8 @@ Make it memorable and shareable!"""
             if description:
                 prompt += f" Context: {description[:200]}..."
             
-            # Add country-specific critical analysis instructions
-            if any('bangladesh' in str(c).lower() for c in country):
-                prompt += "\n\nSPECIAL INSTRUCTION: This is news from Bangladesh. Please include constructive criticism of the political/social situation in Bangladesh, highlighting issues like governance, human rights, or economic challenges."
-            elif any('pakistan' in str(c).lower() for c in country):
-                prompt += "\n\nSPECIAL INSTRUCTION: This is news from Pakistan. Please include constructive criticism of the situation in Pakistan, focusing on governance issues, economic challenges, or social problems."
-            elif 'congress' in title.lower() or 'congress' in description.lower():
-                prompt += "\n\nSPECIAL INSTRUCTION: This involves the Congress party in India. Please provide logical criticism of their policies, decisions, or actions. Point out flaws in their approach and suggest better alternatives."
+            # Add content safety instruction - force AI to reply "REJECT" for sensitive topics
+            prompt += f"\n\nIMPORTANT SAFETY INSTRUCTION: If this topic involves suicide, self-harm, violence, death, tragedy, sensitive political issues, or any content that could be harmful or inappropriate for social media, simply reply with the single word 'REJECT' and nothing else. Do not explain why or provide alternatives."
             
             # Generate content using Meta AI with delay
             print(f"🤖 Generating {platform_name} content for: {title[:50]}...")
@@ -180,6 +251,11 @@ Make it memorable and shareable!"""
             
             # Extract the generated text
             generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
+            
+            # Check if LLM rejected the content due to guidelines
+            if self._check_if_content_rejected(generated_content, title):
+                print(f"🚫 CONTENT REJECTED BY LLM - SKIPPING POST")
+                return None  # Return None to signal rejection
             
             # Clean up the generated content to remove unwanted quotes
             cleaned_content = self._clean_generated_content(generated_content)
@@ -458,6 +534,11 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             
             # Extract the generated text
             generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
+            
+            # Check if LLM rejected the content due to guidelines
+            if self._check_if_content_rejected(generated_content, title):
+                print(f"🚫 REDDIT CONTENT REJECTED BY LLM - SKIPPING POST")
+                return None  # Return None to signal rejection
             
             # Clean up the generated content to remove unwanted quotes
             cleaned_content = self._clean_generated_content(generated_content)

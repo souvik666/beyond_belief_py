@@ -38,10 +38,13 @@ class FacebookService:
         """Post a text message to the Facebook page"""
         url = f"{self.base_url}/{self.page_id}/feed"
         
-        # Limit message length to Facebook's limits (around 1000 characters for safety)
-        if len(message) > 1000:
-            print(f"⚠️ Message too long ({len(message)} chars), truncating to 1000 chars")
-            message = message[:997] + "..."
+        # Facebook actually supports much longer posts (up to 63,206 characters)
+        # Only truncate if absolutely necessary (over 60,000 characters)
+        if len(message) > 60000:
+            print(f"⚠️ Message extremely long ({len(message)} chars), truncating to 60000 chars")
+            message = message[:59997] + "..."
+        else:
+            print(f"📝 Posting message ({len(message)} characters)")
         
         params = {
             'message': message,
@@ -1035,6 +1038,39 @@ class FacebookService:
                 print("📤 FALLBACK: No media available anywhere, posting text-only...")
                 response = self.post_text(message)
             
+            # STEP 5: Auto-comment with follow/subscribe message if post was successful
+            if response and response.get('id'):
+                post_id = response.get('id')
+                print(f"🎯 Post successful! Post ID: {post_id}")
+                print(f"📝 Starting automatic follow comment process...")
+                
+                # Determine post type for contextual comment
+                post_type = "general"
+                if any(keyword in message.lower() for keyword in ['paranormal', 'ghost', 'ufo', 'alien', 'supernatural', 'mystery', 'strange', 'unexplained']):
+                    post_type = "paranormal"
+                    print(f"🔮 Detected post type: PARANORMAL content")
+                elif any(keyword in message.lower() for keyword in ['reddit', 'community', 'discussion', 'story', 'experience']):
+                    post_type = "reddit"
+                    print(f"👥 Detected post type: REDDIT/COMMUNITY content")
+                elif any(keyword in message.lower() for keyword in ['news', 'breaking', 'update', 'politics', 'congress', 'bangladesh', 'pakistan']):
+                    post_type = "news"
+                    print(f"📰 Detected post type: NEWS content")
+                else:
+                    print(f"📄 Detected post type: GENERAL content")
+                
+                print(f"⏰ Waiting 3 seconds before adding follow comment...")
+                import time
+                time.sleep(3)
+                
+                print(f"🚀 Now attempting to add follow comment to post {post_id}...")
+                
+                # Add the follow comment
+                comment_success = self.auto_comment_on_post(post_id, message, post_type)
+                if comment_success:
+                    print("🌟 ✅ Follow comment process completed successfully!")
+                else:
+                    print("⚠️ Follow comment failed, but main post was successful")
+            
             print("✅ Successfully posted to Facebook!")
             return response
             
@@ -1042,6 +1078,179 @@ class FacebookService:
             print(f"❌ Error in smart_post: {e}")
             raise
     
+    def post_comment_on_post(self, post_id: str, comment_text: str) -> Dict[str, Any]:
+        """Post a comment on a specific Facebook post"""
+        url = f"{self.base_url}/{post_id}/comments"
+        
+        params = {
+            'message': comment_text,
+            'access_token': self.page_token
+        }
+        
+        try:
+            print(f"💬 Adding comment to post {post_id}...")
+            response = requests.post(url, params=params)
+            
+            # Check for specific Facebook API errors
+            if response.status_code == 400:
+                try:
+                    error_data = response.json()
+                    error_message = error_data.get('error', {}).get('message', 'Unknown error')
+                    print(f"❌ Facebook Comment API Error: {error_message}")
+                    return None
+                except:
+                    print("❌ Failed to parse Facebook comment error response")
+                    return None
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get('id'):
+                print(f"✅ Comment posted successfully! Comment ID: {result.get('id')}")
+            
+            return result
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error posting comment: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Unexpected error posting comment: {e}")
+            return None
+
+    def generate_follow_comment(self, post_content: str, post_type: str = "general") -> str:
+        """Generate a contextual follow/subscribe comment using AI based on the post content"""
+        
+        # Page URL
+        page_url = "https://www.facebook.com/people/Beyond-Belief-Daily/61581236679472/"
+        
+        try:
+            # Check if AI is available
+            if not self.ai:
+                print("⚠️ Meta AI not available for comment generation, using fallback")
+                return self._get_fallback_follow_comment(page_url, post_type)
+            
+            # Create AI prompt for generating follow comment
+            prompt = f"""Create a short, engaging Facebook comment to encourage people to follow our page "Beyond Belief Daily".
+
+Post content: {post_content[:200]}...
+
+Requirements:
+- Keep it under 300 characters total
+- Be friendly and engaging
+- Encourage following our page for more similar content
+- Include relevant emojis (but not too many)
+- End with our page link: {page_url}
+- Make it feel natural and contextual to the post
+- Don't use quotes around the comment
+
+Example style: "Love this type of content? Follow Beyond Belief Daily for more fascinating stories every day! 🌟 [page_url]"
+
+Generate a unique comment now:"""
+
+            print("🤖 Generating AI follow comment...")
+            
+            # Add small delay before AI call
+            import time
+            time.sleep(1)
+            
+            # Generate comment using Meta AI
+            response = self.ai.prompt(message=prompt)
+            
+            # Extract the generated comment
+            generated_comment = response.get('message', '') if isinstance(response, dict) else str(response)
+            
+            # Clean up the generated comment (remove any unwanted quotes)
+            if hasattr(self, '_clean_generated_content'):
+                # Use the same cleaning function from content generator if available
+                cleaned_comment = generated_comment.strip()
+                # Remove quotes that wrap the entire comment
+                if (cleaned_comment.startswith('"') and cleaned_comment.endswith('"')) or \
+                   (cleaned_comment.startswith("'") and cleaned_comment.endswith("'")):
+                    cleaned_comment = cleaned_comment[1:-1].strip()
+            else:
+                cleaned_comment = generated_comment.strip()
+            
+            # Ensure the comment is under Facebook's limit
+            if len(cleaned_comment) > 400:
+                print(f"⚠️ AI comment too long ({len(cleaned_comment)} chars), truncating...")
+                cleaned_comment = cleaned_comment[:397] + "..."
+            
+            # Ensure the page URL is included
+            if page_url not in cleaned_comment:
+                if len(cleaned_comment) + len(page_url) + 5 <= 400:
+                    cleaned_comment += f"\n\n{page_url}"
+                else:
+                    # Truncate more to fit the URL
+                    max_text_length = 400 - len(page_url) - 5
+                    cleaned_comment = cleaned_comment[:max_text_length-3] + f"...\n\n{page_url}"
+            
+            print(f"✅ AI generated follow comment ({len(cleaned_comment)} chars)")
+            return cleaned_comment
+            
+        except Exception as e:
+            print(f"⚠️ Error generating AI comment: {e}")
+            print("🔄 Using fallback comment...")
+            return self._get_fallback_follow_comment(page_url, post_type)
+
+    def _get_fallback_follow_comment(self, page_url: str, post_type: str = "general") -> str:
+        """Get a simple fallback follow comment if AI generation fails"""
+        fallback_comments = [
+            f"🌟 Follow Beyond Belief Daily for more interesting content every day!\n\n{page_url}",
+            f"📱 Want more fascinating stories? Follow us for daily updates!\n\n{page_url}",
+            f"✨ Enjoying our content? Follow Beyond Belief Daily for more!\n\n{page_url}",
+            f"🔥 Follow us for more amazing content like this!\n\n{page_url}"
+        ]
+        
+        import random
+        return random.choice(fallback_comments)
+
+    def auto_comment_on_post(self, post_id: str, post_content: str, post_type: str = "general") -> bool:
+        """Automatically add a follow/subscribe comment to a post with robust error handling"""
+        try:
+            print("🤖 Attempting to add AI-generated follow comment...")
+            print(f"📝 Post type detected: {post_type.upper()}")
+            
+            # Generate contextual comment using AI
+            print("🧠 Generating AI comment based on post content...")
+            comment_text = self.generate_follow_comment(post_content, post_type)
+            
+            if not comment_text or len(comment_text.strip()) == 0:
+                print("⚠️ No comment text generated, skipping comment")
+                return False
+            
+            # Show what comment will be posted
+            print(f"📝 Generated comment ({len(comment_text)} chars):")
+            print(f"💬 Comment preview: {comment_text[:100]}{'...' if len(comment_text) > 100 else ''}")
+            print(f"📄 Full comment text:")
+            print(f"   {comment_text}")
+            
+            # Add a small delay before commenting (to seem more natural)
+            import time
+            print("⏳ Waiting 3 seconds before posting comment...")
+            time.sleep(3)
+            
+            print(f"🚀 Now posting comment to Facebook post {post_id}...")
+            
+            # Post the comment with additional error handling
+            comment_result = self.post_comment_on_post(post_id, comment_text)
+            
+            if comment_result and comment_result.get('id'):
+                comment_id = comment_result.get('id')
+                print(f"✅ AI-generated follow comment added successfully!")
+                print(f"🎯 Comment ID: {comment_id}")
+                print(f"📊 Comment stats: {len(comment_text)} characters posted")
+                return True
+            else:
+                print("⚠️ Failed to add follow comment, but main post was successful")
+                print("ℹ️ This doesn't affect the main post - it was posted successfully")
+                return False
+                
+        except Exception as e:
+            print(f"⚠️ Error in auto_comment_on_post: {e}")
+            print("ℹ️ Comment failed but main post remains successful - continuing normally")
+            print("🔄 The automation will continue with the next post")
+            return False
+
     def get_page_info(self) -> Dict[str, Any]:
         """Get information about the Facebook page"""
         url = f"{self.base_url}/{self.page_id}"

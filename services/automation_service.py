@@ -305,7 +305,10 @@ class NewsAutomationService:
             # Generate content
             facebook_content = self.content_generator.generate_content_from_news(article, "facebook")
             
-            if not facebook_content:
+            if facebook_content is None:
+                print("🚫 Content rejected by LLM due to guidelines - skipping this article")
+                return False
+            elif not facebook_content:
                 print("❌ Failed to generate news content")
                 return False
             
@@ -367,7 +370,10 @@ class NewsAutomationService:
             # Generate content from Reddit post
             facebook_content = self.content_generator.generate_content_from_reddit(reddit_post, "facebook")
             
-            if not facebook_content:
+            if facebook_content is None:
+                print("🚫 Reddit content rejected by LLM due to guidelines - skipping this post")
+                return False
+            elif not facebook_content:
                 print("❌ Failed to generate Reddit content")
                 return False
             
