@@ -8,7 +8,6 @@ from typing import Dict, Any, List
 from meta_ai_api import MetaAI
 from dotenv import load_dotenv
 from .reddit_service import RedditService
-
 load_dotenv()
 
 class ContentGenerator:
@@ -158,11 +157,9 @@ Make it memorable and shareable!"""
             # Extract the generated text
             generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
             
-            # Add relevant hashtags based on platform
-            hashtags = self._get_relevant_hashtags(category, title.lower(), platform)
-            
-            # Combine content with hashtags
-            final_content = f"{generated_content}\n\n{' '.join(hashtags)}"
+            # Let the AI decide hashtags - they should already be included in generated_content
+            # No need to add separate hashtags since the prompt asks for hashtags
+            final_content = generated_content
             
             # Ensure character limit compliance
             if len(final_content) > char_limit:
@@ -248,8 +245,8 @@ Make it memorable and shareable!"""
             if keyword in title_text:
                 selected_hashtags.extend(random.sample(tags, 1))
         
-        # Remove duplicates and limit to 5 hashtags
-        unique_hashtags = list(dict.fromkeys(selected_hashtags))[:5]
+        # Remove duplicates and limit to 2 hashtags for professional look
+        unique_hashtags = list(dict.fromkeys(selected_hashtags))[:2]
         return unique_hashtags
     
     def _create_fallback_content(self, article: Dict[str, Any], platform: str = "facebook") -> str:
@@ -340,46 +337,72 @@ Make it memorable and shareable!"""
             subreddit = reddit_post.get('subreddit', '')
             score = reddit_post.get('score', 0)
             
-            # Reddit-specific templates for Facebook
+            # Reddit-specific templates for Facebook - Professional & SEO-friendly
             reddit_templates = [
-                """Create an engaging Facebook post based on this Reddit paranormal story: {title}
+                """Create a professional Facebook post based on this Reddit story: {title}
 
-IMPORTANT: Keep it under 800 characters total.
+IMPORTANT: Keep it under 800 characters total. Make it Facebook SEO-friendly for maximum reach.
 
 Format:
-👻 Attention-grabbing headline with paranormal emoji
-📱 Brief summary of the Reddit story (2 sentences max)
-🤔 Add your own perspective or analysis
-💭 Engaging question to spark discussion
-#hashtags (max 3 paranormal-related)
+- Strong, keyword-rich headline (no emojis)
+- Brief summary of the story (2-3 sentences)
+- Your professional analysis or insight
+- Engaging question to encourage comments and shares
+- Only 1-2 relevant hashtags
 
-Make it mysterious and engaging!""",
+Focus on creating viral, shareable content that drives engagement and helps build a following.""",
 
-                """Transform this Reddit post into Facebook content: {title}
+                """Transform this Reddit post into professional Facebook content: {title}
 
-LIMIT: 800 characters maximum.
+LIMIT: 800 characters maximum. Optimize for Facebook algorithm and engagement.
 
 Structure:
-🔮 Mysterious opener
-📝 Key points from the story (concise)
-🧐 Critical analysis or alternative explanation
-❓ Question for audience engagement
-#hashtags
+- Compelling opener with keywords
+- Key story points (clear and concise)
+- Professional commentary or unique perspective
+- Call-to-action question for audience engagement
+- Maximum 2 hashtags
 
-Focus on the paranormal angle!""",
+Create content that encourages likes, comments, and shares for maximum Facebook reach.""",
 
                 """Create a Facebook post from this Reddit story: {title}
 
-MAX LENGTH: 800 characters.
+MAX LENGTH: 800 characters. Focus on Facebook SEO and viral potential.
 
 Include:
-- Relevant paranormal emoji
-- Story summary (brief)
-- Your take on the experience
-- Engagement question
-- 2-3 hashtags
+- Attention-grabbing headline with relevant keywords
+- Story summary (engaging but professional)
+- Your expert take or analysis
+- Question that drives discussion
+- 1-2 strategic hashtags
 
-Make it shareable and intriguing!"""
+Make it professional, shareable, and optimized for Facebook's algorithm.""",
+
+                """Turn this Reddit story into viral Facebook content: {title}
+
+STRICT LIMIT: 800 characters total. Optimize for Facebook fame and reach.
+
+Format:
+- Hook with trending keywords
+- Story essence (professional tone)
+- Your unique insight or perspective
+- Engagement-driving question
+- 1-2 powerful hashtags
+
+Create content that gets shared, commented on, and helps build your Facebook presence.""",
+
+                """Create professional Facebook content from this Reddit post: {title}
+
+MAX 800 characters including hashtags. Focus on building your Facebook following.
+
+Structure:
+- Strong opener (no emojis, keyword-rich)
+- Core story points (clear and engaging)
+- Professional commentary
+- Question that encourages interaction
+- 1-2 relevant hashtags
+
+Make it authoritative, shareable, and designed to grow your Facebook audience."""
             ]
             
             # Select template
@@ -395,7 +418,7 @@ Make it shareable and intriguing!"""
             
             # Add subreddit context
             prompt += f"\n\nThis was posted in r/{subreddit} with {score} upvotes."
-            prompt += f"\n\nIMPORTANT: This is for Facebook. Keep it under {char_limit} characters total. Focus on the paranormal/mysterious aspect."
+            prompt += f"\n\nIMPORTANT: This is for Facebook. Keep it under {char_limit} characters total. Create engaging content that highlights what makes this story interesting and worth sharing."
             
             # Generate content using Meta AI with delay
             print(f"🤖 Generating Facebook content for Reddit post: {title[:50]}...")
@@ -409,11 +432,9 @@ Make it shareable and intriguing!"""
             # Extract the generated text
             generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
             
-            # Add relevant hashtags for Reddit content
-            hashtags = self._get_reddit_hashtags(subreddit, title.lower())
-            
-            # Combine content with hashtags
-            final_content = f"{generated_content}\n\n{' '.join(hashtags)}"
+            # Let the AI decide hashtags - they should already be included in generated_content
+            # No need to add separate hashtags since the prompt asks for 1-2 hashtags
+            final_content = generated_content
             
             # Ensure character limit compliance
             if len(final_content) > char_limit:
@@ -562,9 +583,9 @@ Make it shareable and intriguing!"""
         if subreddit_lower in reddit_hashtags:
             selected_hashtags.extend(reddit_hashtags[subreddit_lower])
         
-        # Add general paranormal hashtags
-        general_paranormal = ['#Reddit', '#TrueStory', '#Paranormal', '#Mystery', '#Unexplained', '#Video', '#CaughtOnCamera']
-        selected_hashtags.extend(random.sample(general_paranormal, 2))
+        # Add general Reddit hashtags (not always paranormal)
+        general_reddit = ['#Reddit', '#TrueStory', '#Interesting', '#Discussion', '#Story', '#Experience', '#Share']
+        selected_hashtags.extend(random.sample(general_reddit, 2))
         
         # Add hashtags based on keywords in title
         keyword_mapping = {
@@ -608,31 +629,31 @@ Make it shareable and intriguing!"""
             if keyword in title_text:
                 selected_hashtags.extend(tags)
         
-        # Remove duplicates and limit to 5 hashtags
-        unique_hashtags = list(dict.fromkeys(selected_hashtags))[:5]
+        # Remove duplicates and limit to 2 hashtags for professional look
+        unique_hashtags = list(dict.fromkeys(selected_hashtags))[:2]
         return unique_hashtags
 
     def _create_reddit_fallback_content(self, reddit_post: Dict[str, Any]) -> str:
         """Create structured fallback content for Reddit posts when AI generation fails"""
-        title = reddit_post.get('title', 'Mysterious Reddit Story')
-        subreddit = reddit_post.get('subreddit', 'paranormal')
+        title = reddit_post.get('title', 'Interesting Reddit Story')
+        subreddit = reddit_post.get('subreddit', 'reddit')
         score = reddit_post.get('score', 0)
         
-        # Facebook fallback templates for Reddit content
+        # Professional Facebook fallback templates for Reddit content
         fallback_templates = [
-            f"👻 MYSTERIOUS REDDIT STORY\n\nFrom r/{subreddit} ({score} upvotes):\n\n{title}\n\n🤔 What do you think really happened here?\n\nShare your thoughts on this paranormal experience!",
+            f"TRENDING DISCUSSION\n\nFrom r/{subreddit} ({score} upvotes):\n\n{title}\n\nWhat are your thoughts on this story?\n\nShare your perspective in the comments below.",
             
-            f"🔮 PARANORMAL ENCOUNTER\n\nA Reddit user shared this in r/{subreddit}:\n\n{title}\n\n💭 Real experience or imagination?\n\nLet us know what you believe!",
+            f"REDDIT COMMUNITY STORY\n\nA user shared this experience in r/{subreddit}:\n\n{title}\n\nWhat's your take on this situation?\n\nLet us know your thoughts.",
             
-            f"📱 FROM THE DEPTHS OF REDDIT\n\nr/{subreddit} story:\n{title}\n\n🧐 This got {score} upvotes...\n\n❓ Do you believe in the paranormal?",
+            f"POPULAR STORY\n\nr/{subreddit} discussion:\n{title}\n\nThis received {score} upvotes from the community.\n\nWhat do you think about this?",
             
-            f"👁️ UNEXPLAINED EXPERIENCE\n\nShared on r/{subreddit}:\n\n{title}\n\n🌟 {score} people found this interesting\n\n💬 What's your take on this story?"
+            f"COMMUNITY DISCUSSION\n\nShared on r/{subreddit}:\n\n{title}\n\n{score} people found this worth discussing.\n\nWhat's your perspective on this story?"
         ]
         
         content = random.choice(fallback_templates)
         
-        # Add basic hashtags
-        basic_hashtags = ['#Reddit', '#Paranormal', '#TrueStory', '#Mystery']
-        content += f"\n\n{' '.join(random.sample(basic_hashtags, 3))}"
+        # Add only 2 professional hashtags
+        basic_hashtags = ['#Reddit', '#Story', '#Discussion', '#Community']
+        content += f"\n\n{' '.join(random.sample(basic_hashtags, 2))}"
         
         return content

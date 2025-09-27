@@ -186,6 +186,9 @@ class NewsAutomationService:
     
     def create_and_post_content(self):
         """Main function to create and post content - respects content mode settings"""
+        # Track execution start time
+        execution_start_time = datetime.now()
+        
         # Determine post type based on content mode
         if self.content_mode == 'reddit_only':
             post_type = 'reddit'
@@ -195,13 +198,13 @@ class NewsAutomationService:
             post_type = 'news' if self.post_news_next else 'reddit'
         
         self.logger.log_step("CREATE_AND_POST_START", {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': execution_start_time.isoformat(),
             'content_mode': self.content_mode,
             'post_type': post_type
         })
         
         try:
-            print(f"\n🚀 Starting content creation and posting at {datetime.now()}")
+            print(f"\n🚀 Starting content creation and posting at {execution_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"📊 Content Mode: {self.content_mode.upper()}")
             
             # Post content based on determined type
@@ -232,10 +235,22 @@ class NewsAutomationService:
                 
                 print(f"📊 Stats: {self.stats['successful_posts']}/{self.stats['total_posts']} successful posts")
                 print(f"📊 News: {self.stats['news_posts']} | Reddit: {self.stats['reddit_posts']}")
+                
+                # Show next execution time if running in scheduled mode
+                if schedule.jobs:
+                    next_run = schedule.next_run()
+                    if next_run:
+                        print(f"🕐 Next execution will start at: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
             else:
                 self.stats['total_posts'] += 1
                 self.stats['failed_posts'] += 1
                 print("❌ Post failed - will retry same type next time")
+                
+                # Show next execution time even on failure
+                if schedule.jobs:
+                    next_run = schedule.next_run()
+                    if next_run:
+                        print(f"🕐 Next execution will start at: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
             
         except Exception as e:
             error_msg = str(e)
@@ -249,6 +264,24 @@ class NewsAutomationService:
             
             self.stats['total_posts'] += 1
             self.stats['failed_posts'] += 1
+        
+        finally:
+            # Calculate and display execution time
+            execution_end_time = datetime.now()
+            execution_duration = execution_end_time - execution_start_time
+            
+            # Convert to human-readable format
+            total_seconds = int(execution_duration.total_seconds())
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            
+            if minutes > 0:
+                duration_str = f"{minutes}m {seconds}s"
+            else:
+                duration_str = f"{seconds}s"
+            
+            print(f"⏱️ Execution completed in: {duration_str}")
+            print(f"🏁 Finished at: {execution_end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def _post_news_content(self) -> bool:
         """Post news content to Facebook"""
@@ -442,12 +475,23 @@ class NewsAutomationService:
         print("🚀 Running first post...")
         self.create_and_post_content()
         
-        print(f"⏰ Scheduler started. Posting every {interval_minutes} minutes. Press Ctrl+C to stop.")
+        # Calculate and display next execution time
+        next_execution = datetime.now() + timedelta(minutes=interval_minutes)
+        print(f"⏰ Scheduler started. Posting every {interval_minutes} minutes.")
+        print(f"🕐 Next execution will start at: {next_execution.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("Press Ctrl+C to stop.")
         
         # Keep the scheduler running
         try:
             while True:
                 schedule.run_pending()
+                
+                # Show next execution time every cycle
+                if schedule.jobs:
+                    next_run = schedule.next_run()
+                    if next_run:
+                        print(f"🕐 Next execution scheduled for: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+                
                 time.sleep(60)  # Check every minute
         except KeyboardInterrupt:
             print("\n🛑 Automation stopped by user")
