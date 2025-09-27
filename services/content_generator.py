@@ -264,10 +264,24 @@ Make it comprehensive, thought-provoking, and shareable!"""
             # No need to add separate hashtags since the prompt asks for hashtags
             final_content = cleaned_content
             
-            # Ensure character limit compliance
+            # Ensure character limit compliance - but avoid unnecessary truncation
             if len(final_content) > char_limit:
                 print(f"⚠️ Content too long ({len(final_content)} chars), truncating for {platform_name}...")
-                final_content = final_content[:char_limit-3] + "..."
+                # Try to truncate at a natural break point (sentence end) instead of adding "..."
+                truncated = final_content[:char_limit]
+                # Find the last complete sentence
+                last_period = truncated.rfind('.')
+                last_exclamation = truncated.rfind('!')
+                last_question = truncated.rfind('?')
+                
+                # Use the latest sentence ending
+                last_sentence_end = max(last_period, last_exclamation, last_question)
+                
+                if last_sentence_end > char_limit * 0.8:  # If we can keep 80% of content with complete sentence
+                    final_content = truncated[:last_sentence_end + 1]
+                else:
+                    # If no good sentence break, truncate without adding "..."
+                    final_content = truncated.rstrip()
             
             print(f"✅ Generated {platform_name} content ({len(final_content)} chars): {final_content[:100]}...")
             return final_content
@@ -547,10 +561,24 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             # No need to add separate hashtags since the prompt asks for 1-2 hashtags
             final_content = cleaned_content
             
-            # Ensure character limit compliance
+            # Ensure character limit compliance - but avoid unnecessary truncation
             if len(final_content) > char_limit:
                 print(f"⚠️ Content too long ({len(final_content)} chars), truncating...")
-                final_content = final_content[:char_limit-3] + "..."
+                # Try to truncate at a natural break point (sentence end) instead of adding "..."
+                truncated = final_content[:char_limit]
+                # Find the last complete sentence
+                last_period = truncated.rfind('.')
+                last_exclamation = truncated.rfind('!')
+                last_question = truncated.rfind('?')
+                
+                # Use the latest sentence ending
+                last_sentence_end = max(last_period, last_exclamation, last_question)
+                
+                if last_sentence_end > char_limit * 0.8:  # If we can keep 80% of content with complete sentence
+                    final_content = truncated[:last_sentence_end + 1]
+                else:
+                    # If no good sentence break, truncate without adding "..."
+                    final_content = truncated.rstrip()
             
             print(f"✅ Generated Facebook Reddit content ({len(final_content)} chars): {final_content[:100]}...")
             return final_content
