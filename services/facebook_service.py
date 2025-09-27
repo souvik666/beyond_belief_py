@@ -1059,7 +1059,6 @@ class FacebookService:
                     print(f"📄 Detected post type: GENERAL content")
                 
                 print(f"⏰ Waiting 3 seconds before adding follow comment...")
-                import time
                 time.sleep(3)
                 
                 print(f"🚀 Now attempting to add follow comment to post {post_id}...")
@@ -1150,7 +1149,6 @@ Generate a unique comment now:"""
             print("🤖 Generating AI follow comment...")
             
             # Add small delay before AI call
-            import time
             time.sleep(1)
             
             # Generate comment using Meta AI
@@ -1225,7 +1223,6 @@ Generate a unique comment now:"""
             print(f"   {comment_text}")
             
             # Add a small delay before commenting (to seem more natural)
-            import time
             print("⏳ Waiting 3 seconds before posting comment...")
             time.sleep(3)
             
