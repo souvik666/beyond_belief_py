@@ -221,7 +221,7 @@ Make it comprehensive, thought-provoking, and shareable!"""
                 platform_name = "Twitter"
             else:
                 template = random.choice(self.templates)
-                char_limit = 63000  # Use Facebook's maximum character limit (63,206)
+                char_limit = 63206  # Use Facebook's actual maximum character limit
                 platform_name = "Facebook"
             
             # Create the prompt
