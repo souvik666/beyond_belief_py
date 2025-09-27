@@ -448,15 +448,62 @@ Make it comprehensive, thought-provoking, and shareable!"""
     # ---------------------------
 
     def generate_content_from_reddit(self, reddit_post: Dict[str, Any], platform: str = "facebook") -> str:
-        """Generate unique content from a Reddit post using Meta AI for Facebook posting"""
+        """Generate unique content from a Reddit post using Meta AI for specific platform"""
         try:
             title = reddit_post.get('title', '')
             selftext = reddit_post.get('selftext', '')
             subreddit = reddit_post.get('subreddit', '')
             score = reddit_post.get('score', 0)
             
-            # Reddit-specific templates for Facebook - Professional & SEO-friendly
-            reddit_templates = [
+            # Platform-specific templates
+            if platform.lower() == "twitter":
+                # Twitter-specific templates - focus on content, not subreddit
+                reddit_templates = [
+                    """Create a compelling Twitter post about this story: {title}
+
+IMPORTANT: Keep it under 280 characters total. Focus on the CONTENT, not the source.
+
+Format:
+- Engaging headline or key point
+- Brief context if needed
+- Relevant hashtags based on the CONTENT (not #Reddit #Story)
+- Make it newsworthy and shareable
+
+Example topics and hashtags:
+- Technology news: #Tech #Innovation #AI
+- Politics: #Politics #News #Breaking
+- Science: #Science #Research #Discovery
+- Entertainment: #Entertainment #Celebrity #Movies
+- Business: #Business #Economy #Finance
+
+Focus on what the story is ABOUT, not where it came from.""",
+
+                    """Transform this story into a Twitter-ready post: {title}
+
+MAX 280 characters including hashtags. Make it engaging and newsworthy.
+
+Requirements:
+- Focus on the story content, not the Reddit source
+- Use relevant hashtags based on the topic (NOT #Reddit #Story)
+- Make it sound like breaking news or interesting content
+- Be concise and punchy for Twitter audience
+
+Generate content that people would want to retweet based on the story itself.""",
+
+                    """Create a Twitter post for this news story: {title}
+
+STRICT 280 character limit. Focus on making this CONTENT viral.
+
+Structure:
+- Hook: What makes this story interesting?
+- Key point: Main takeaway
+- Hashtags: Based on the actual topic/content
+
+DO NOT mention Reddit or use generic hashtags. Make it about the story content."""
+                ]
+            else:
+                # Facebook templates (existing)
+                reddit_templates = [
                 """Create a professional Facebook post based on this Reddit story: {title}
 
 IMPORTANT: Keep it under 800 characters total. Make it Facebook SEO-friendly for maximum reach.

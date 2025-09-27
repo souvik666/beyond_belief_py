@@ -324,11 +324,40 @@ class NewsAutomationService:
                 article.get('description', '')
             )
             
-            if facebook_response and facebook_response.get('id'):
+            facebook_success = facebook_response and facebook_response.get('id')
+            
+            # Also post to Twitter if enabled
+            twitter_success = True  # Default to True if Twitter is disabled
+            if self.twitter_service:
+                print("🐦 Generating Twitter content...")
+                twitter_content = self.content_generator.generate_content_from_news(article, "twitter")
+                
+                if twitter_content and twitter_content is not None:
+                    print("📤 Posting news to Twitter...")
+                    twitter_success = self.twitter_service.post_tweet(twitter_content, image_url)
+                    if twitter_success:
+                        print("✅ Successfully posted to Twitter!")
+                    else:
+                        print("❌ Failed to post to Twitter")
+                else:
+                    print("⚠️ Skipping Twitter post - content generation failed or rejected")
+                    twitter_success = False
+            
+            if facebook_success:
                 # Mark article as posted in cache
                 self.news_fetcher.mark_as_posted(article)
                 
-                print(f"✅ Successfully posted news! Post ID: {facebook_response.get('id')}")
+                print(f"✅ Successfully posted news! Facebook Post ID: {facebook_response.get('id')}")
+                
+                # Log posting results
+                if self.twitter_service:
+                    if twitter_success:
+                        print("📊 Posted to both Facebook and Twitter")
+                    else:
+                        print("📊 Posted to Facebook only (Twitter failed)")
+                else:
+                    print("📊 Posted to Facebook only (Twitter disabled)")
+                
                 return True
             else:
                 print("❌ Failed to post news to Facebook")
@@ -399,11 +428,42 @@ class NewsAutomationService:
                 preview_images
             )
             
-            if facebook_response and facebook_response.get('id'):
+            facebook_success = facebook_response and facebook_response.get('id')
+            
+            # Also post to Twitter if enabled
+            twitter_success = True  # Default to True if Twitter is disabled
+            if self.twitter_service:
+                print("🐦 Generating Twitter content for Reddit post...")
+                
+                # Generate proper Twitter content using AI, not just basic formatting
+                twitter_content = self.content_generator.generate_content_from_reddit(reddit_post, "twitter")
+                
+                if twitter_content and twitter_content is not None:
+                    print("📤 Posting Reddit content to Twitter...")
+                    twitter_success = self.twitter_service.post_tweet(twitter_content, media_url, preview_images)
+                    if twitter_success:
+                        print("✅ Successfully posted Reddit content to Twitter!")
+                    else:
+                        print("❌ Failed to post Reddit content to Twitter")
+                else:
+                    print("⚠️ Skipping Twitter post - content generation failed or rejected")
+                    twitter_success = False
+            
+            if facebook_success:
                 # Mark Reddit post as posted
                 self.reddit_cache.mark_reddit_post_as_posted(reddit_post, facebook_response.get('id'))
                 
-                print(f"✅ Successfully posted Reddit content! Post ID: {facebook_response.get('id')}")
+                print(f"✅ Successfully posted Reddit content! Facebook Post ID: {facebook_response.get('id')}")
+                
+                # Log posting results
+                if self.twitter_service:
+                    if twitter_success:
+                        print("📊 Posted Reddit content to both Facebook and Twitter")
+                    else:
+                        print("📊 Posted Reddit content to Facebook only (Twitter failed)")
+                else:
+                    print("📊 Posted Reddit content to Facebook only (Twitter disabled)")
+                
                 return True
             else:
                 print("❌ Failed to post Reddit content to Facebook")
