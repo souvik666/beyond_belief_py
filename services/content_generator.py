@@ -7,6 +7,7 @@ import random
 from typing import Dict, Any, List
 from datetime import datetime
 from meta_ai_api import MetaAI
+from google import genai
 from dotenv import load_dotenv
 from .reddit_service import RedditService
 load_dotenv()
@@ -14,6 +15,19 @@ load_dotenv()
 class ContentGenerator:
     def __init__(self):
         self.ai = MetaAI()
+        
+        # Initialize Gemini AI as fallback
+        try:
+            gemini_api_key = os.getenv('GEMINI_API_KEY')
+            if gemini_api_key:
+                self.gemini_client = genai.Client(api_key=gemini_api_key)
+                print("✅ Gemini AI initialized as fallback")
+            else:
+                self.gemini_client = None
+                print("⚠️ GEMINI_API_KEY not found - fallback disabled")
+        except Exception as e:
+            print(f"⚠️ Gemini AI initialization failed: {e}")
+            self.gemini_client = None
         
         # Initialize Reddit service for fetching posts
         try:
@@ -207,6 +221,88 @@ Make it comprehensive, thought-provoking, and shareable!"""
         
         return False
 
+    def _robust_meta_ai_call(self, prompt: str, max_retries: int = 2) -> str:
+        """Make a robust Meta AI call with limited retries before fallback"""
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                # Shorter delays: 2s, 4s
+                delay = 2 ** (attempt + 1)
+                if attempt > 0:
+                    print(f"🔄 Meta AI retry attempt {attempt + 1}/{max_retries} (waiting {delay}s)...")
+                    time.sleep(delay)
+                else:
+                    time.sleep(2)  # Initial delay
+                
+                # Make the API call
+                response = self.ai.prompt(message=prompt)
+                
+                # Extract and validate response
+                if isinstance(response, dict):
+                    generated_content = response.get('message', '')
+                else:
+                    generated_content = str(response)
+                
+                # Check if we got valid content
+                if generated_content and len(generated_content.strip()) > 0:
+                    print(f"✅ Meta AI successful on attempt {attempt + 1}")
+                    return generated_content
+                else:
+                    print(f"⚠️ Meta AI returned empty content on attempt {attempt + 1}")
+                    if attempt == max_retries - 1:
+                        raise Exception("Meta AI returned empty content - switching to Gemini")
+                    continue
+                    
+            except Exception as e:
+                print(f"❌ Meta AI attempt {attempt + 1} failed: {e}")
+                # Check for specific Meta AI errors that should trigger immediate fallback
+                error_str = str(e).lower()
+                if any(keyword in error_str for keyword in ['unable to obtain', 'rate limited', 'login', 'credentials']):
+                    print(f"🚫 Meta AI service issue detected - triggering immediate Gemini fallback")
+                    raise Exception(f"Meta AI service unavailable: {e}")
+                
+                if attempt == max_retries - 1:
+                    raise Exception(f"Meta AI failed after {max_retries} attempts: {e}")
+                continue
+        
+        raise Exception("Meta AI failed after all retry attempts")
+
+    def _generate_with_gemini_fallback(self, prompt: str, title: str, platform: str = "facebook") -> str:
+        """Generate content using Gemini as fallback when Meta AI fails"""
+        if not self.gemini_client:
+            print("🚫 Gemini fallback not available - no API key configured")
+            return None
+        
+        try:
+            print(f"🔄 FALLBACK: Using Gemini AI for content generation...")
+            
+            # Add delay before Gemini call
+            import time
+            time.sleep(2)
+            
+            # Generate content with Gemini using the correct API
+            response = self.gemini_client.models.generate_content(
+                model="gemini-2.0-flash-exp",
+                contents=prompt
+            )
+            generated_content = response.text if response.text else ""
+            
+            # Check if Gemini rejected the content
+            if self._check_if_content_rejected(generated_content, title):
+                print(f"🚫 GEMINI ALSO REJECTED CONTENT - Using manual fallback")
+                return None
+            
+            # Clean up the generated content
+            cleaned_content = self._clean_generated_content(generated_content)
+            
+            print(f"✅ Gemini fallback successful ({len(cleaned_content)} chars): {cleaned_content[:100]}...")
+            return cleaned_content
+            
+        except Exception as e:
+            print(f"❌ Gemini fallback failed: {e}")
+            return None
+
     def generate_content_from_news(self, article: Dict[str, Any], platform: str = "facebook") -> str:
         """Generate unique content from a news article using Meta AI for specific platform"""
         try:
@@ -248,15 +344,30 @@ Make it comprehensive, thought-provoking, and shareable!"""
             import time
             time.sleep(2)  # 2 second delay before each LLM call
             
-            response = self.ai.prompt(message=prompt)
-            
-            # Extract the generated text
-            generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
+            try:
+                # Use robust Meta AI call with retry logic
+                generated_content = self._robust_meta_ai_call(prompt)
+            except Exception as meta_error:
+                print(f"🚫 META AI FAILED AFTER ALL RETRIES: {meta_error}")
+                print(f"🔄 TRYING GEMINI FALLBACK...")
+                # Try Gemini fallback immediately
+                fallback_content = self._generate_with_gemini_fallback(prompt, title, platform)
+                if fallback_content:
+                    return fallback_content
+                else:
+                    print(f"🚫 ALL AI MODELS FAILED - Using manual fallback")
+                    return self._create_fallback_content(article, platform)
             
             # Check if LLM rejected the content due to guidelines
             if self._check_if_content_rejected(generated_content, title):
-                print(f"🚫 CONTENT REJECTED BY LLM - SKIPPING POST")
-                return None  # Return None to signal rejection
+                print(f"🚫 META AI REJECTED CONTENT - TRYING GEMINI FALLBACK")
+                # Try Gemini fallback
+                fallback_content = self._generate_with_gemini_fallback(prompt, title, platform)
+                if fallback_content:
+                    return fallback_content
+                else:
+                    print(f"🚫 ALL AI MODELS FAILED - SKIPPING POST")
+                    return None
             
             # Clean up the generated content to remove unwanted quotes
             cleaned_content = self._clean_generated_content(generated_content)
@@ -592,15 +703,30 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             import time
             time.sleep(2)
             
-            response = self.ai.prompt(message=prompt)
-            
-            # Extract the generated text
-            generated_content = response.get('message', '') if isinstance(response, dict) else str(response)
+            try:
+                # Use robust Meta AI call with retry logic
+                generated_content = self._robust_meta_ai_call(prompt)
+            except Exception as meta_error:
+                print(f"🚫 META AI FAILED AFTER ALL RETRIES FOR REDDIT: {meta_error}")
+                print(f"🔄 TRYING GEMINI FALLBACK...")
+                # Try Gemini fallback immediately
+                fallback_content = self._generate_with_gemini_fallback(prompt, title, platform)
+                if fallback_content:
+                    return fallback_content
+                else:
+                    print(f"🚫 ALL AI MODELS FAILED FOR REDDIT - Using manual fallback")
+                    return self._create_reddit_fallback_content(reddit_post)
             
             # Check if LLM rejected the content due to guidelines
             if self._check_if_content_rejected(generated_content, title):
-                print(f"🚫 REDDIT CONTENT REJECTED BY LLM - SKIPPING POST")
-                return None  # Return None to signal rejection
+                print(f"🚫 META AI REJECTED REDDIT CONTENT - TRYING GEMINI FALLBACK")
+                # Try Gemini fallback
+                fallback_content = self._generate_with_gemini_fallback(prompt, title, platform)
+                if fallback_content:
+                    return fallback_content
+                else:
+                    print(f"🚫 ALL AI MODELS FAILED FOR REDDIT CONTENT - SKIPPING POST")
+                    return None
             
             # Clean up the generated content to remove unwanted quotes
             cleaned_content = self._clean_generated_content(generated_content)
