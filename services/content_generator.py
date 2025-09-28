@@ -150,6 +150,33 @@ Make it comprehensive, thought-provoking, and shareable!"""
         # Remove any remaining trailing superscript numbers or special characters
         content = re.sub(r'[\s¹²³⁴⁵⁶⁷⁸⁹⁰]+$', '', content)
         
+        # Additional cleanup for markdown formatting that might slip through
+        # Remove bold markdown formatting
+        content = re.sub(r'\*\*(.*?)\*\*', r'\1', content)
+        content = re.sub(r'__(.*?)__', r'\1', content)
+        
+        # Remove italic markdown formatting
+        content = re.sub(r'\*(.*?)\*', r'\1', content)
+        content = re.sub(r'_(.*?)_', r'\1', content)
+        
+        # Remove markdown headers
+        content = re.sub(r'^#{1,6}\s+', '', content, flags=re.MULTILINE)
+        
+        # Remove markdown bullet points
+        content = re.sub(r'^\s*[\*\-\+]\s+', '', content, flags=re.MULTILINE)
+        content = re.sub(r'^\s*\d+\.\s+', '', content, flags=re.MULTILINE)
+        
+        # Remove markdown code blocks
+        content = re.sub(r'```.*?```', '', content, flags=re.DOTALL)
+        content = re.sub(r'`([^`]+)`', r'\1', content)
+        
+        # Remove markdown links but keep the text
+        content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', content)
+        
+        # Clean up any double spaces or line breaks
+        content = re.sub(r'\s+', ' ', content)
+        content = re.sub(r'\n\s*\n', '\n\n', content)
+        
         return content.strip()
 
     def _check_if_content_rejected(self, content: str, article_title: str) -> bool:
@@ -333,6 +360,22 @@ Make it comprehensive, thought-provoking, and shareable!"""
             # Add context if description is available
             if description:
                 prompt += f" Context: {description[:200]}..."
+            
+            # Add professional formatting instructions
+            prompt += f"\n\nFORMATTING REQUIREMENTS:"
+            prompt += f"\n- Write in plain text only - NO markdown formatting"
+            prompt += f"\n- NO bold text (**text**), NO italic text (*text*)"
+            prompt += f"\n- NO markdown headers (# ## ###)"
+            prompt += f"\n- NO bullet points with asterisks (*) or dashes (-)"
+            prompt += f"\n- Use simple emojis and line breaks for structure"
+            prompt += f"\n- Write as a clean, professional social media post"
+            prompt += f"\n- Output should be ready to post directly without any formatting cleanup"
+            
+            # Add language style preference
+            prompt += f"\n\nLANGUAGE STYLE PREFERENCE:"
+            prompt += f"\n- Try to use Sherpese-style English if possible (simple, direct, authentic tone)"
+            prompt += f"\n- If Sherpese style is not suitable for the content, use normal professional English"
+            prompt += f"\n- Keep the language engaging and accessible to a broad audience"
             
             # Add content safety instruction - force AI to reply "REJECT" for sensitive topics
             prompt += f"\n\nIMPORTANT SAFETY INSTRUCTION: If this topic involves suicide, self-harm, violence, death, tragedy, sensitive political issues, or any content that could be harmful or inappropriate for social media, simply reply with the single word 'REJECT' and nothing else. Do not explain why or provide alternatives."
@@ -695,6 +738,22 @@ Make it authoritative, shareable, and designed to grow your Facebook audience.""
             # Add subreddit context
             prompt += f"\n\nThis was posted in r/{subreddit} with {score} upvotes."
             prompt += f"\n\nIMPORTANT: This is for Facebook. Keep it under {char_limit} characters total. Create engaging content that highlights what makes this story interesting and worth sharing."
+            
+            # Add professional formatting instructions for Reddit content too
+            prompt += f"\n\nFORMATTING REQUIREMENTS:"
+            prompt += f"\n- Write in plain text only - NO markdown formatting"
+            prompt += f"\n- NO bold text (**text**), NO italic text (*text*)"
+            prompt += f"\n- NO markdown headers (# ## ###)"
+            prompt += f"\n- NO bullet points with asterisks (*) or dashes (-)"
+            prompt += f"\n- Use simple emojis and line breaks for structure"
+            prompt += f"\n- Write as a clean, professional social media post"
+            prompt += f"\n- Output should be ready to post directly without any formatting cleanup"
+            
+            # Add language style preference for Reddit content too
+            prompt += f"\n\nLANGUAGE STYLE PREFERENCE:"
+            prompt += f"\n- Try to use Sherpese-style English if possible (simple, direct, authentic tone)"
+            prompt += f"\n- If Sherpese style is not suitable for the content, use normal professional English"
+            prompt += f"\n- Keep the language engaging and accessible to a broad audience"
             
             # Generate content using Meta AI with delay
             print(f"🤖 Generating Facebook content for Reddit post: {title[:50]}...")
